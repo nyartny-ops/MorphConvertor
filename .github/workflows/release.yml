@@ -53,7 +53,7 @@ jobs:
             curl -fsSL https://raw.githubusercontent.com/nyartny-ops/MorphConvertor/main/install.sh | bash
             ```
 
-            **Morph.dmg** (появится в Assets, когда завершится сборка на macOS): открой и перетащи Morph в «Программы». Приложение не подписано сертификатом Apple, поэтому один раз выполни:
+            **Morph.dmg** — открой и перетащи Morph в «Программы». Приложение не подписано платным сертификатом Apple, поэтому при первом запуске один раз выполни (инструкция есть и внутри DMG):
             ```bash
             xattr -dr com.apple.quarantine /Applications/Morph.app
             ```
@@ -63,28 +63,85 @@ jobs:
             Внутри DMG — ffmpeg для Apple Silicon и Intel. Для XLSX/PPTX нужен бесплатный [LibreOffice](https://www.libreoffice.org).
 
   dmg:
-    name: Сборка Morph.dmg
+    name: Сборка и проверка Morph.dmg
     needs: publish
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
+
+      - name: Инструменты
+        run: brew install create-dmg ffmpeg   # ffmpeg — только ради ffprobe в тестах
 
       - name: Сборка Morph.app (universal ffmpeg)
         env:
           MORPH_VERSION: ${{ needs.publish.outputs.version }}
         run: bash scripts/build.sh --out dist --ffmpeg universal
 
-      - name: DMG и ZIP
+      - name: Проверка бандла
+        run: |
+          R=dist/Morph.app/Contents/Resources
+          for f in convert.sh pdftool.js ui.html applet.icns bin/ffmpeg; do test -e "$R/$f" || { echo "::error title=Бандл::нет $f"; exit 1; }; done
+          lipo -info "$R/bin/ffmpeg"
+          lipo -info "$R/bin/ffmpeg" | grep -q arm64 && lipo -info "$R/bin/ffmpeg" | grep -q x86_64 || { echo "::error title=ffmpeg::не universal"; exit 1; }
+          "$R/bin/ffmpeg" -hide_banner -encoders | grep -E ' (libx264|libx265|libvpx-vp9|libmp3lame|libopus|libwebp) ' || true
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" dist/Morph.app/Contents/Info.plist
+          codesign --verify --deep --strict --verbose=2 dist/Morph.app
+
+      - name: Тесты движка внутри приложения (с его ffmpeg)
+        env:
+          MORPH_ENGINE: ${{ github.workspace }}/dist/Morph.app/Contents/Resources/convert.sh
+        run: bash tests/engine.sh
+
+      - name: Запуск приложения
+        run: |
+          LOG="$HOME/Library/Logs/Morph.log"; rm -f "$LOG"
+          open "$PWD/dist/Morph.app"
+          for i in $(seq 1 60); do grep -q "интерфейс готов" "$LOG" 2>/dev/null && break; sleep 1; done
+          sleep 6
+          [ -f "$LOG" ] && while IFS= read -r l; do echo "::notice title=Morph.log::$l"; done < "$LOG"
+          grep -q "интерфейс готов" "$LOG" || { echo "::error title=Запуск::интерфейс не загрузился"; exit 1; }
+          pgrep -f "Morph.app/Contents/MacOS" >/dev/null || { echo "::error title=Запуск::Morph закрылся после старта"; ls -t ~/Library/Logs/DiagnosticReports | head -3; exit 1; }
+          if grep -q "ОШИБКА" "$LOG"; then echo "::error title=Запуск::ошибки в журнале"; exit 1; fi
+          osascript -e 'tell application id "io.github.morph.converter" to quit' || pkill -f "Morph.app/Contents/MacOS" || true
+          echo "Morph запустился и работает"
+
+      - name: DMG
         run: |
           V="${{ needs.publish.outputs.version }}"
           mkdir -p stage
           cp -R dist/Morph.app stage/
-          ln -s /Applications stage/Applications
-          # постоянные имена — ссылка releases/latest/download/Morph.dmg всегда ведёт на свежую версию
-          hdiutil create -volname "Morph $V" -srcfolder stage -ov -format UDZO dist/Morph.dmg
+          cp assets/dmg-readme.txt "stage/Если не открывается.txt"
+          tiffutil -cathidpicheck assets/dmg-background.png assets/dmg-background@2x.png -out "$RUNNER_TEMP/bg.tiff"
+          rm -f dist/Morph.dmg
+          # create-dmg раскладывает окно через Finder; если Finder на CI зависнет — простой DMG
+          if ! perl -e 'alarm 420; exec @ARGV' create-dmg \
+                --volname "Morph $V" --volicon src/Morph.icns \
+                --background "$RUNNER_TEMP/bg.tiff" \
+                --window-pos 200 120 --window-size 660 460 \
+                --icon-size 100 --text-size 12 \
+                --icon "Morph.app" 180 196 --hide-extension "Morph.app" \
+                --app-drop-link 480 196 \
+                --icon "Если не открывается.txt" 560 385 \
+                --hdiutil-quiet \
+                dist/Morph.dmg stage/; then
+            echo "::warning title=DMG::create-dmg не справился, собираю простой DMG"
+            rm -f dist/Morph.dmg
+            ln -s /Applications stage/Applications
+            hdiutil create -volname "Morph $V" -srcfolder stage -ov -format UDZO dist/Morph.dmg
+          fi
+
+      - name: Проверка DMG
+        run: |
+          M="$(mktemp -d)"
+          hdiutil attach dist/Morph.dmg -nobrowse -readonly -mountpoint "$M"
+          ls -la "$M"
+          codesign --verify --deep --strict "$M/Morph.app"
+          test -x "$M/Morph.app/Contents/Resources/bin/ffmpeg"
+          hdiutil detach "$M"
           ditto -c -k --sequesterRsrc --keepParent dist/Morph.app dist/Morph.zip
           cd dist && shasum -a 256 Morph.dmg Morph.zip | tee SHA256SUMS.txt
+          ls -lh
 
       - uses: softprops/action-gh-release@v2
         with:
