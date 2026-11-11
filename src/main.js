@@ -286,16 +286,23 @@ function handle(m) {
 
 // ---------- журнал ошибок: ~/Library/Logs/Morph.log ----------
 var LOG = $.NSHomeDirectory().js + '/Library/Logs/Morph.log';
+var IN_CI = (function () {
+  try { var v = $.NSProcessInfo.processInfo.environment.objectForKey('MORPH_CI'); return !!(v && !v.isNil()); } catch (e) { return false; }
+})();
 function log(msg) {
+  var line = new Date().toISOString() + '  ' + msg;
+  if (IN_CI) { try { console.log(line); } catch (e) {} }
   try {
+    FM.createDirectoryAtPathWithIntermediateDirectoriesAttributesError(LOG.replace(/\/[^\/]*$/, ''), true, $(), null);
     var prev = readText(LOG);
     if (prev.length > 200000) prev = prev.slice(-100000);
-    $(prev + new Date().toISOString() + '  ' + msg + '\n').writeToFileAtomicallyEncodingError(LOG, true, $.NSUTF8StringEncoding, null);
-  } catch (e) {}
+    $(prev + line + '\n').writeToFileAtomicallyEncodingError(LOG, true, $.NSUTF8StringEncoding, null);
+  } catch (e) { if (IN_CI) { try { console.log('LOG FAIL: ' + e); } catch (e2) {} } }
 }
 function fatal(where, e) {
   var m = where + ': ' + (e && e.message ? e.message : String(e));
   log('ОШИБКА ' + m + (e && e.stack ? '\n' + e.stack : ''));
+  if (IN_CI) return;
   try {
     var a = $.NSAlert.alloc.init;
     a.setMessageText($('Morph: ошибка'));

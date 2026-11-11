@@ -97,7 +97,9 @@ jobs:
       - name: Скрипт приложения через osascript (ошибки с номерами строк)
         continue-on-error: true
         run: |
-          perl -e 'alarm 25; exec @ARGV' osascript -l JavaScript "$GITHUB_WORKSPACE/src/main.js" > "$RUNNER_TEMP/osa.txt" 2>&1; echo "exit=$?"
+          mkdir -p "$HOME/Library/Logs"
+          MORPH_CI=1 perl -e 'alarm 25; exec @ARGV' osascript -l JavaScript "$GITHUB_WORKSPACE/src/main.js" > "$RUNNER_TEMP/osa.txt" 2>&1; echo "exit=$?"
+          cat "$RUNNER_TEMP/osa.txt" | head -50
           tail -n 20 "$RUNNER_TEMP/osa.txt" | while IFS= read -r l; do echo "::notice title=osascript::$l"; done
           tail -n 10 "$HOME/Library/Logs/Morph.log" 2>/dev/null | while IFS= read -r l; do echo "::notice title=osa-log::$l"; done
           pkill -f "osascript -l JavaScript" || true
@@ -108,7 +110,7 @@ jobs:
           EXE="$(ls "$APP/Contents/MacOS/" | head -n 1)"
           LOG="$HOME/Library/Logs/Morph.log"; rm -f "$LOG"; mkdir -p "$HOME/Library/Logs"
           echo "Исполняемый файл: $EXE ($(lipo -archs "$APP/Contents/MacOS/$EXE"))"
-          "$APP/Contents/MacOS/$EXE" > "$RUNNER_TEMP/morph.out" 2>&1 &
+          MORPH_CI=1 "$APP/Contents/MacOS/$EXE" > "$RUNNER_TEMP/morph.out" 2>&1 &
           PID=$!
           for i in $(seq 1 90); do grep -q "интерфейс готов" "$LOG" 2>/dev/null && break; kill -0 $PID 2>/dev/null || break; sleep 1; done
           sleep 8
@@ -132,7 +134,7 @@ jobs:
 
       - name: Скриншот при ошибке
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: screen
           path: ${{ runner.temp }}/screen.png
