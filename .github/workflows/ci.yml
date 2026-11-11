@@ -39,7 +39,7 @@ jobs:
         run: |
           curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz | tar -xJ -C /tmp
           echo "$(ls -d /tmp/ffmpeg-*/bin)" >> "$GITHUB_PATH"
-      - run: ffmpeg -version | head -1 && bash tests/engine.sh
+      - run: bash tests/engine.sh
 
   macos:
     name: Сборка и тесты (macOS)
