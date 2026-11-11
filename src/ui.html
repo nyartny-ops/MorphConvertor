@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Morph</title>
+<style>
+:root{
+  --bg:#111112; --raise:#1d1d1f; --raise2:#242427;
+  --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
+  --text:#ededee; --dim:#9a9a9f; --faint:#5f5f65;
+  --acc:#ff5a1f; --ok:#5fd38d; --err:#ff5d5d;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
+html{height:100%;background:transparent}
+body{height:100%;padding-top:30px;background:rgba(17,17,18,.86);color:var(--text);
+  font:13px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;letter-spacing:-.005em;
+  -webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;cursor:default;overflow:hidden}
+body.web{padding-top:0;background:var(--bg)}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;text-align:left}
+.mono{font-family:var(--mono)}
+.app{display:grid;grid-template-columns:1fr 320px;height:100%}
+
+.left{display:flex;flex-direction:column;min-width:0;padding:4px 20px 16px}
+.top{display:flex;align-items:center;gap:14px;height:40px;margin-bottom:10px}
+.logo{display:flex;align-items:center;gap:8px;font-weight:650;font-size:15px;letter-spacing:-.02em}
+.logo i{width:10px;height:10px;background:var(--acc);border-radius:2px}
+.top .sub{color:var(--faint);font-size:12px}
+.top .sp{flex:1}
+.link{color:var(--dim);font-size:12.5px;padding:5px 8px;border-radius:6px;transition:color .12s,background .12s}
+.link:hover{color:var(--text);background:var(--raise)}
+.link:disabled{opacity:.35;pointer-events:none}
+
+.drop{flex:1;border:1px dashed var(--line2);border-radius:10px;display:flex;flex-direction:column;justify-content:flex-end;padding:36px;gap:18px}
+.drop h1{font-size:34px;line-height:1.05;font-weight:650;letter-spacing:-.035em;max-width:440px}
+.drop h1 span{color:var(--faint)}
+.drop p{color:var(--dim);max-width:400px;font-size:13.5px}
+.formats{font:11px/1.8 var(--mono);color:var(--faint);text-transform:uppercase;letter-spacing:.04em;max-width:480px}
+.formats b{color:var(--dim);font-weight:500}
+.drop .actions{display:flex;align-items:center;gap:14px;margin-top:4px}
+.btn{padding:9px 14px;border-radius:7px;border:1px solid var(--line2);font-weight:550;transition:background .12s,border-color .12s}
+.btn:hover{background:var(--raise);border-color:rgba(255,255,255,.22)}
+.kbd{font:11px var(--mono);color:var(--faint)}
+
+.head,.row{display:grid;grid-template-columns:40px 1fr 128px 64px 24px;gap:14px;align-items:center}
+.head{padding:0 4px 8px;border-bottom:1px solid var(--line);font:10.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
+.head .r{text-align:right}
+.list{flex:1;overflow-y:auto;margin-right:-8px;padding-right:8px}
+.list::-webkit-scrollbar{width:6px}.list::-webkit-scrollbar-thumb{background:var(--raise2);border-radius:6px}
+.row{position:relative;padding:11px 4px;border-bottom:1px solid var(--line);transition:background .12s}
+.row:hover{background:rgba(255,255,255,.025)}
+.row.ok{cursor:pointer}
+.ext{height:28px;border:1px solid var(--line2);border-radius:5px;display:grid;place-items:center;font:600 9.5px var(--mono);letter-spacing:.04em;text-transform:uppercase;color:var(--dim);position:relative}
+.ext::before{content:"";position:absolute;left:-1px;top:6px;bottom:6px;width:2px;border-radius:2px;background:var(--kc,var(--faint))}
+.meta{min-width:0}
+.name{font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.info{color:var(--faint);font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.info.err{color:var(--err)}
+.size{text-align:right;font:12px var(--mono);color:var(--dim);white-space:nowrap}
+.size em{font-style:normal;color:var(--text)}
+.res{text-align:right;font:600 12px var(--mono);white-space:nowrap}
+.res.ok{color:var(--ok)}.res.up{color:var(--dim)}.res.wait,.res.same{color:var(--faint);font-weight:400}.res.err{color:var(--err)}
+.x{width:24px;height:24px;border-radius:5px;display:grid;place-items:center;color:var(--faint);opacity:0;transition:.12s}
+.x svg{width:10px;height:10px}
+.row:hover .x{opacity:1}.x:hover{background:var(--raise2);color:var(--text)}
+.bar{position:absolute;left:0;bottom:-1px;height:2px;background:var(--acc);transition:width .3s linear}
+.bar.ind{width:22%!important;animation:ind 1.2s cubic-bezier(.6,0,.4,1) infinite}
+@keyframes ind{from{left:-22%}to{left:100%}}
+
+.foot{display:flex;align-items:center;gap:10px;padding-top:12px;font-size:12.5px}
+.foot .sum{flex:1;color:var(--dim)}
+.foot .sum b{color:var(--text);font-weight:600}
+.foot .sum .g{color:var(--ok)}
+
+.over{position:fixed;inset:0;display:grid;place-items:center;background:rgba(17,17,18,.84);opacity:0;pointer-events:none;transition:opacity .12s;z-index:20}
+.over::before{content:"";position:absolute;inset:12px;border:1.5px solid var(--acc);border-radius:12px}
+.over div{font-size:28px;font-weight:650;letter-spacing:-.03em}
+.over div span{color:var(--acc)}
+body.dragging .over{opacity:1}
+
+.panel{border-left:1px solid var(--line);background:rgba(255,255,255,.015);display:flex;flex-direction:column;min-height:0}
+.scroll{flex:1;overflow-y:auto;padding:8px 20px 8px}
+.scroll::-webkit-scrollbar{width:0}
+.sec{padding:16px 0;border-bottom:1px solid var(--line)}
+.sec:first-child{padding-top:6px}
+.sec:last-child{border-bottom:0}
+.lbl{display:flex;align-items:baseline;gap:8px;font:10.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin-bottom:10px}
+.lbl .n{color:var(--acc)}
+.lbl em{font-style:normal;margin-left:auto;text-transform:none;letter-spacing:0;color:var(--dim);font-family:-apple-system,sans-serif;font-size:11.5px}
+.seg{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line2);border-radius:8px;padding:2px}
+.seg button{text-align:center;padding:7px 0;border-radius:6px;color:var(--dim);font-weight:550;transition:background .15s,color .15s}
+.seg button.on{background:var(--text);color:#111}
+.note{color:var(--dim);font-size:12px;margin-top:10px;line-height:1.45}
+.group{margin-top:12px}.group:first-of-type{margin-top:0}
+.gl{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--dim);margin-bottom:7px}
+.gl i{width:6px;height:6px;border-radius:1px}
+.gl span{color:var(--faint);margin-left:auto;font-size:11px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{padding:5px 9px;border-radius:6px;border:1px solid var(--line2);font:500 11.5px var(--mono);letter-spacing:.02em;color:var(--dim);transition:.12s}
+.chip:hover{color:var(--text);border-color:rgba(255,255,255,.25)}
+.chip.on{background:var(--text);border-color:var(--text);color:#111}
+.chip small{font-family:-apple-system,sans-serif;font-size:10.5px;opacity:.55;margin-left:4px;letter-spacing:0}
+.chip.na{opacity:.3;pointer-events:none}
+.presets{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line2);border-radius:8px;overflow:hidden}
+.preset{padding:9px 10px;border-right:1px solid var(--line2);transition:background .12s}
+.preset:last-child{border-right:0}
+.preset:hover{background:var(--raise)}
+.preset b{display:block;font-weight:550;font-size:12px}
+.preset span{display:block;font:10.5px var(--mono);color:var(--faint);margin-top:1px}
+.preset.on{background:var(--text);color:#111}.preset.on span{color:#555}
+.fine{display:flex;align-items:center;gap:10px;margin-top:12px}
+.fine span{font-size:11px;color:var(--faint)}
+input[type=range]{-webkit-appearance:none;flex:1;height:2px;background:linear-gradient(90deg,var(--text) var(--p,50%),var(--raise2) var(--p,50%));outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--text);border:2px solid var(--bg)}
+.qv{font:600 11.5px var(--mono);min-width:22px;text-align:right}
+.toggle{display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-size:12.5px}
+.sw{width:30px;height:18px;border-radius:9px;background:var(--raise2);position:relative;transition:background .15s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--dim);transition:transform .18s,background .15s}
+.toggle.on .sw{background:var(--acc)}.toggle.on .sw::after{transform:translateX(12px);background:#fff}
+.radio{display:flex;align-items:center;gap:10px;width:100%;padding:8px 0}
+.radio .o{width:14px;height:14px;border-radius:50%;border:1px solid var(--line2);flex:none;position:relative}
+.radio.on .o{border-color:var(--text)}
+.radio.on .o::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--text)}
+.radio .t{min-width:0;flex:1}
+.radio b{display:block;font-weight:500;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.radio span{display:block;font:11px var(--mono);color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.radio .ch{flex:none;font:12px -apple-system,sans-serif;color:var(--dim);padding:4px 9px;border-radius:6px;border:1px solid var(--line2)}
+.radio .ch:hover{color:var(--text);border-color:rgba(255,255,255,.25)}
+.warn{font-size:11.5px;color:var(--dim);border-left:2px solid var(--acc);padding:2px 0 2px 10px;margin-top:10px;line-height:1.45}
+.ctawrap{padding:14px 20px 18px;border-top:1px solid var(--line)}
+.cta{position:relative;overflow:hidden;width:100%;height:44px;border-radius:8px;background:var(--acc);color:#140800;font-weight:650;font-size:14px;letter-spacing:-.01em;
+  display:flex;align-items:center;justify-content:space-between;padding:0 16px;transition:filter .12s,transform .08s}
+.cta:hover{filter:brightness(1.07)}.cta:active{transform:scale(.99)}
+.cta:disabled{background:var(--raise);color:var(--faint);pointer-events:none}
+.cta .fill{position:absolute;left:0;top:0;bottom:0;width:0;background:rgba(255,90,31,.28);transition:width .4s linear}
+.cta.run{background:var(--raise);color:var(--text)}
+.cta span,.cta small{position:relative;z-index:1}
+.cta small{font:500 11.5px var(--mono);opacity:.75}
+.toast{position:fixed;left:20px;bottom:20px;padding:9px 14px;border-radius:7px;background:var(--text);color:#111;font-weight:550;font-size:12.5px;opacity:0;transform:translateY(8px);transition:.2s;pointer-events:none;z-index:30}
+.toast.show{opacity:1;transform:none}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="left">
+    <div class="top">
+      <div class="logo"><i></i>Morph</div>
+      <div class="sub">конвертер и сжатие файлов</div>
+      <div class="sp"></div>
+      <button class="link" id="addBtn">Файлы <span class="mono" style="color:var(--faint)">⌘O</span></button>
+      <button class="link" id="addDirBtn">Папку</button>
+      <button class="link" id="clearBtn">Очистить</button>
+    </div>
+
+    <div class="drop" id="empty">
+      <h1>Перетащи файлы <span>или папки</span> сюда</h1>
+      <p>Сожму или переведу в другой формат. Оригиналы не меняются — результат появится рядом или в выбранной папке.</p>
+      <div class="formats"><b>Картинки</b> jpg png heic webp tiff raw &nbsp;/&nbsp; <b>gif</b> &nbsp;/&nbsp; <b>Видео</b> mp4 mov mkv webm &nbsp;/&nbsp; <b>Аудио</b> mp3 wav flac m4a &nbsp;/&nbsp; <b>pdf</b> &nbsp;/&nbsp; <b>Документы</b> docx rtf txt &nbsp;/&nbsp; <b>Таблицы</b> xlsx csv</div>
+      <div class="actions"><button class="btn" id="pickBtn">Выбрать файлы</button><button class="btn" id="pickDirBtn">Выбрать папку</button><span class="kbd">⌘O</span></div>
+    </div>
+
+    <div class="head" id="head" hidden><div>Тип</div><div>Файл</div><div class="r">Размер</div><div class="r">Итог</div><div></div></div>
+    <div class="list" id="list" hidden></div>
+    <div class="foot" id="foot" hidden>
+      <div class="sum" id="sum"></div>
+      <button class="link" id="revealAll">Показать в Finder</button>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <div class="scroll">
+      <div class="sec">
+        <div class="lbl"><span class="n">01</span>Режим</div>
+        <div class="seg" id="seg"><button data-m="compress">Сжать</button><button data-m="convert">Конвертировать</button></div>
+        <div class="note" id="modeNote"></div>
+      </div>
+      <div class="sec" id="what"></div>
+      <div class="sec">
+        <div class="lbl"><span class="n" id="nQ">03</span>Качество <em id="qhint"></em></div>
+        <div class="presets" id="presets">
+          <button class="preset" data-q="90"><b>Высокое</b><span>q 90</span></button>
+          <button class="preset" data-q="65"><b>Баланс</b><span>q 65</span></button>
+          <button class="preset" data-q="30"><b>Сильное</b><span>q 30</span></button>
+        </div>
+        <div class="fine"><span>вес</span><input type="range" id="q" min="10" max="100" step="1"><span>качество</span><span class="qv" id="qv"></span></div>
+      </div>
+      <div class="sec">
+        <div class="lbl"><span class="n" id="nS">04</span>Размер <em>длинная сторона, px</em></div>
+        <div class="chips" id="sizes"></div>
+        <div class="toggle" id="mute" style="margin-top:14px"><span>Убрать звук из видео</span><div class="sw"></div></div>
+      </div>
+      <div class="sec">
+        <div class="lbl"><span class="n" id="nD">05</span>Сохранение</div>
+        <button class="radio" id="dNear"><div class="o"></div><div class="t"><b>Рядом с оригиналом</b><span>та же папка</span></div></button>
+        <button class="radio" id="dDir"><div class="o"></div><div class="t"><b id="dDirName">В папку</b><span id="dDirPath">не выбрана</span></div><span class="ch" id="dChange">Выбрать</span></button>
+        <div id="warns"></div>
+      </div>
+    </div>
+    <div class="ctawrap"><button class="cta" id="cta" disabled><div class="fill" id="fill"></div><span id="ctaText">Добавь файлы</span><small id="ctaSub"></small></button></div>
+  </aside>
+</div>
+<div class="over"><div>Отпусти<span>.</span></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+window.onerror=function(m,u,l){try{window.webkit.messageHandlers.morph.postMessage({cmd:'log',text:m+' @'+l})}catch(e){}};
+(function(){
+var KIND_NAMES={image:'Картинки',gif:'GIF',video:'Видео',audio:'Аудио',pdf:'PDF',doc:'Документы',sheet:'Таблицы',slides:'Презентации',other:'Прочее',folder:'Папки'};
+var KIND_COLORS={image:'#4cc9b0',gif:'#e86aa6',video:'#ff8a3d',audio:'#e8c547',pdf:'#ff5d5d',doc:'#6c9cff',sheet:'#5fd38d',slides:'#f0a040',other:'#77777d',folder:'#77777d'};
+var TARGETS={
+  image:[['jpg','JPG'],['png','PNG'],['webp','WEBP'],['heic','HEIC'],['tiff','TIFF'],['gif','GIF'],['pdf','PDF']],
+  gif:[['mp4','MP4'],['webm','WEBM'],['webp','WEBP'],['mov','MOV'],['png','PNG','кадр']],
+  video:[['mp4','MP4'],['mp4hevc','H.265'],['mov','MOV'],['webm','WEBM'],['mkv','MKV'],['gif','GIF'],['mp3','MP3','звук'],['m4a','M4A','звук'],['jpg','JPG','кадр']],
+  audio:[['mp3','MP3'],['m4a','M4A'],['wav','WAV'],['flac','FLAC'],['ogg','OGG'],['opus','OPUS'],['aiff','AIFF']],
+  pdf:[['png','PNG','стр.'],['jpg','JPG','стр.'],['txt','TXT'],['docx','DOCX']],
+  doc:[['pdf','PDF'],['docx','DOCX'],['doc','DOC'],['rtf','RTF'],['txt','TXT'],['html','HTML'],['odt','ODT']],
+  sheet:[['xlsx','XLSX'],['csv','CSV'],['ods','ODS'],['pdf','PDF']],
+  slides:[['pdf','PDF'],['pptx','PPTX'],['odp','ODP'],['png','PNG']],
+  other:[['zip','ZIP']],folder:[['zip','ZIP']]
+};
+var NEEDS_LO={sheet:1,slides:1};
+var SIZES=[[0,'Исходный'],[3840,'3840'],[1920,'1920'],[1280,'1280'],[1080,'1080'],[720,'720'],[480,'480'],[320,'320']];
+var XSVG='<svg viewBox="0 0 10 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M1.5 1.5l7 7M8.5 1.5l-7 7"/></svg>';
+
+var S={items:[],outDir:'',running:false,tools:{ffmpeg:true,lo:false}};
+var set={mode:'compress',targets:{image:'jpg',gif:'mp4',video:'mp4',audio:'mp3',pdf:'png',doc:'pdf',sheet:'xlsx',slides:'pdf'},quality:65,max:0,mute:false};
+
+function $(id){return document.getElementById(id)}
+function send(cmd,data){var m=Object.assign({cmd:cmd},data||{});try{window.webkit.messageHandlers.morph.postMessage(m)}catch(e){console.log('->',m)}}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function human(n){n=+n||0;if(n<1024)return n+' Б';var u=['КБ','МБ','ГБ'],i=-1;do{n/=1024;i++}while(n>=1024&&i<2);return(n>=100?n.toFixed(0):n.toFixed(1)).replace('.',',')+' '+u[i]}
+function plural(n,a,b,c){var m=n%10,h=n%100;return(m==1&&h!=11)?a:(m>=2&&m<=4&&(h<10||h>=20))?b:c}
+function ext(n){var i=n.lastIndexOf('.');return i>0?n.slice(i+1).toLowerCase():''}
+function saveSet(){send('settings',{settings:set})}
+function toast(t){var e=$('toast');e.textContent=t;e.classList.add('show');clearTimeout(e._t);e._t=setTimeout(function(){e.classList.remove('show')},2400)}
+function kindsPresent(){var k={},o=[];S.items.forEach(function(it){if(!k[it.kind]){k[it.kind]=1;o.push(it.kind)}});return o}
+
+function renderMode(){
+  [].forEach.call($('seg').children,function(b){b.classList.toggle('on',b.dataset.m===set.mode)});
+  $('modeNote').textContent=set.mode==='compress'
+    ?'Формат остаётся прежним, вес — меньше. Если файл не уменьшится, он не сохраняется.'
+    :'Выбери формат для каждого типа файлов из списка.';
+  var el=$('what');
+  if(set.mode==='compress'){el.hidden=true;$('nQ').textContent='02';$('nS').textContent='03';$('nD').textContent='04';return}
+  el.hidden=false;$('nQ').textContent='03';$('nS').textContent='04';$('nD').textContent='05';
+  var kinds=kindsPresent();if(!kinds.length)kinds=['image','gif','video','audio'];
+  var h='<div class="lbl"><span class="n">02</span>Формат</div>';
+  kinds.forEach(function(k){
+    var opts=TARGETS[k]||TARGETS.other,cur=set.targets[k]||opts[0][0];
+    if(!opts.some(function(o){return o[0]===cur}))cur=set.targets[k]=opts[0][0];
+    var na=NEEDS_LO[k]&&!S.tools.lo;
+    h+='<div class="group"><div class="gl"><i style="background:'+KIND_COLORS[k]+'"></i>'+KIND_NAMES[k]+(na?'<span>нужен LibreOffice</span>':'')+'</div><div class="chips">';
+    opts.forEach(function(o){h+='<button class="chip'+(o[0]===cur?' on':'')+(na?' na':'')+'" data-k="'+k+'" data-t="'+o[0]+'">'+o[1]+(o[2]?'<small>'+o[2]+'</small>':'')+'</button>'});
+    h+='</div></div>';
+  });
+  el.innerHTML=h;
+}
+function renderQuality(){
+  var q=set.quality;
+  [].forEach.call($('presets').children,function(b){b.classList.toggle('on',+b.dataset.q===q)});
+  var r=$('q');r.value=q;r.style.setProperty('--p',((q-10)/90*100)+'%');$('qv').textContent=q;
+  $('qhint').textContent=q>=85?'без видимых потерь':q>=55?'разница почти незаметна':q>=35?'заметно легче':'максимально лёгкие';
+}
+function renderSizes(){
+  $('sizes').innerHTML=SIZES.map(function(s){return'<button class="chip'+(s[0]===set.max?' on':'')+'" data-s="'+s[0]+'">'+s[1]+'</button>'}).join('');
+  var kinds=kindsPresent();
+  $('mute').hidden=kinds.length>0&&kinds.indexOf('video')<0;
+  $('mute').classList.toggle('on',!!set.mute);
+}
+function renderDest(){
+  $('dNear').classList.toggle('on',!S.outDir);
+  $('dDir').classList.toggle('on',!!S.outDir);
+  if(S.savedDir){var p=S.savedDir.split('/');$('dDirName').textContent=p[p.length-1]||'/';$('dDirPath').textContent=S.savedDirShort||S.savedDir;$('dChange').textContent='Сменить'}
+  else{$('dDirName').textContent='В папку';$('dDirPath').textContent='не выбрана';$('dChange').textContent='Выбрать'}
+  var w=[],kinds=kindsPresent();
+  if(!S.tools.ffmpeg)w.push('ffmpeg не найден: видео, аудио и GIF недоступны. Запусти установщик ещё раз.');
+  if(!S.tools.lo&&kinds.some(function(k){return NEEDS_LO[k]}))w.push('Для таблиц и презентаций нужен бесплатный LibreOffice.');
+  $('warns').innerHTML=w.map(function(t){return'<div class="warn">'+t+'</div>'}).join('');
+}
+function renderCTA(){
+  var b=$('cta'),t=$('ctaText'),sub=$('ctaSub'),f=$('fill');
+  var total=S.items.length,wait=0,fin=0,cur=null;
+  S.items.forEach(function(i){if(i.status==='wait')wait++;else if(i.status==='work')cur=i;else fin++});
+  b.classList.toggle('run',S.running);
+  if(S.running){
+    var all=fin+wait+1,p=(fin+(cur&&cur.progress>=0?cur.progress:0))/all;
+    f.style.width=(p*100)+'%';t.textContent='Остановить';sub.textContent=(fin+1)+' / '+all;b.disabled=false;return;
+  }
+  f.style.width='0';
+  if(!total){t.textContent='Добавь файлы';sub.textContent='';b.disabled=true;return}
+  b.disabled=false;
+  var n=wait||total;
+  t.textContent=(set.mode==='compress'?'Сжать':'Конвертировать')+(wait?'':' заново');
+  sub.textContent=n+' '+plural(n,'файл','файла','файлов');
+}
+function renderList(){
+  var has=S.items.length;
+  $('empty').hidden=!!has;$('list').hidden=!has;$('foot').hidden=!has;$('head').hidden=!has;
+  $('clearBtn').disabled=!has||S.running;
+  var h='';
+  S.items.forEach(function(it){
+    var e=ext(it.name)||'—',info='',size=human(it.size),res='',rc=it.status;
+    if(it.status==='wait'){info='в очереди';res='—'}
+    if(it.status==='work'){info='обработка';res=it.progress>=0?Math.round(it.progress*100)+'%':'···'}
+    if(it.status==='ok'){
+      var pct=it.a?Math.round((it.b-it.a)*100/it.a):0;
+      info='→ '+esc(it.outName||'');size=human(it.a)+' → <em>'+human(it.b)+'</em>';
+      res=(pct>0?'+':pct<0?'−':'')+Math.abs(pct)+'%';rc=pct<0?'ok':'up';
+    }
+    if(it.status==='same'){info='уже оптимален, оставлен как есть';res='0%'}
+    if(it.status==='err'){info=esc(it.info||'ошибка');res='ошибка'}
+    h+='<div class="row '+it.status+'" data-id="'+it.id+'" title="'+esc(it.status==='err'?it.info:it.status==='ok'?'Показать в Finder':it.name)+'">'
+      +'<div class="ext" style="--kc:'+(KIND_COLORS[it.kind]||'#777')+'">'+esc(e.slice(0,4))+'</div>'
+      +'<div class="meta"><div class="name">'+esc(it.name)+'</div><div class="info'+(it.status==='err'?' err':'')+'">'+info+'</div></div>'
+      +'<div class="size">'+size+'</div><div class="res '+rc+'">'+res+'</div>'
+      +'<div>'+(S.running?'':'<button class="x" data-rm="'+it.id+'" title="Убрать из списка">'+XSVG+'</button>')+'</div>'
+      +(it.status==='work'?'<div class="bar'+(it.progress>=0?'':' ind')+'" style="width:'+(Math.max(0,it.progress)*100)+'%"></div>':'')
+      +'</div>';
+  });
+  var L=$('list'),st=L.scrollTop;L.innerHTML=h;L.scrollTop=st;
+  var saved=0,ok=0,tot=0;
+  S.items.forEach(function(i){tot+=+i.size||0;if(i.status==='ok'){ok++;if(i.b<i.a)saved+=i.a-i.b}});
+  $('sum').innerHTML=ok
+    ?('Готово <b>'+ok+'</b> из '+S.items.length+(saved?' &nbsp;·&nbsp; сэкономлено <b class="g">'+human(saved)+'</b>':''))
+    :('<b>'+S.items.length+'</b> '+plural(S.items.length,'файл','файла','файлов')+' &nbsp;·&nbsp; '+human(tot));
+  $('revealAll').hidden=!ok;
+}
+function render(){renderMode();renderQuality();renderSizes();renderDest();renderCTA();renderList()}
+
+window.morph={
+  state:function(s){
+    var was=S.running;S=s;if(s.settings)set=Object.assign(set,s.settings);render();
+    if(was&&!s.running){var sv=0;s.items.forEach(function(i){if(i.status==='ok'&&i.b<i.a)sv+=i.a-i.b});toast(sv?'Готово — минус '+human(sv):'Готово')}
+  },
+  drag:function(on){document.body.classList.toggle('dragging',!!on)},
+  toast:toast
+};
+
+document.addEventListener('click',function(e){
+  var t=e.target.closest('button,.row,.toggle');if(!t)return;
+  if(t.dataset.rm){e.stopPropagation();send('remove',{id:+t.dataset.rm});return}
+  if(t.dataset.m){set.mode=t.dataset.m;saveSet();render();return}
+  if(t.dataset.t){set.targets[t.dataset.k]=t.dataset.t;saveSet();render();return}
+  if(t.dataset.q){set.quality=+t.dataset.q;saveSet();render();return}
+  if(t.dataset.s!==undefined&&t.classList.contains('chip')){set.max=+t.dataset.s;saveSet();render();return}
+  if(t.id==='mute'){set.mute=!set.mute;saveSet();render();return}
+  if(t.id==='addBtn'||t.id==='pickBtn'){send('add');return}
+  if(t.id==='clearBtn'){send('clear');return}
+  if(t.id==='dNear'){send('resetOut');return}
+  if(t.id==='dDir'){send(e.target.id==='dChange'?'chooseOut':'useDir');return}
+  if(t.id==='addDirBtn'||t.id==='pickDirBtn'){send('addFolder');return}
+  if(t.id==='revealAll'){send('revealAll');return}
+  if(t.id==='cta'){if(S.running)send('stop');else send('start',{settings:set});return}
+  if(t.classList.contains('row')&&t.classList.contains('ok')){send('reveal',{id:+t.dataset.id});return}
+});
+$('q').addEventListener('input',function(){set.quality=+this.value;renderQuality()});
+$('q').addEventListener('change',saveSet);
+document.addEventListener('keydown',function(e){
+  if(e.metaKey&&e.key.toLowerCase()==='o'){e.preventDefault();send(e.shiftKey?'addFolder':'add')}
+  if(e.key==='Enter'&&!$('cta').disabled)$('cta').click();
+  if(e.key==='Escape'&&S.running)send('stop');
+});
+['dragover','drop'].forEach(function(n){document.addEventListener(n,function(e){e.preventDefault()})});
+document.addEventListener('contextmenu',function(e){e.preventDefault()});
+if(!window.webkit||!window.webkit.messageHandlers)document.body.classList.add('web');
+render();send('ready');
+})();
+</script>
+</body>
+</html>

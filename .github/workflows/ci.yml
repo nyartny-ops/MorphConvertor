@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Проверка кода
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning -e SC2086,SC2046,SC2015,SC2034 src/convert.sh scripts/build.sh install.command tests/engine.sh
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Синтаксис JavaScript
+        run: |
+          node --check src/main.js
+          node --check src/pdftool.js
+          sed -n '/<script>/,/<\/script>/p' src/ui.html | sed '1d;$d' > /tmp/ui.js
+          node --check /tmp/ui.js
+
+  engine-linux:
+    name: Движок (Linux, ffmpeg)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg zip
+      - run: bash tests/engine.sh
+
+  macos:
+    name: Сборка и тесты (macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: ffmpeg для тестов
+        run: brew install ffmpeg
+      - name: Тесты движка (включая sips, textutil, PDFKit)
+        run: bash tests/engine.sh
+      - name: Сборка Morph.app
+        run: bash scripts/build.sh --out dist --ffmpeg auto
+      - name: Проверка бандла
+        run: |
+          test -x dist/Morph.app/Contents/Resources/bin/ffmpeg
+          test -f dist/Morph.app/Contents/Resources/ui.html
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" dist/Morph.app/Contents/Info.plist
+          codesign --verify --deep --verbose=2 dist/Morph.app

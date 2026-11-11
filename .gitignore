@@ -1,0 +1,4 @@
+dist/
+stage/
+.DS_Store
+*.dmg
