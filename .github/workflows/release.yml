@@ -96,22 +96,29 @@ jobs:
 
       - name: Запуск приложения
         run: |
-          LOG="$HOME/Library/Logs/Morph.log"; rm -f "$LOG"
-          open "$PWD/dist/Morph.app"
-          for i in $(seq 1 60); do grep -q "интерфейс готов" "$LOG" 2>/dev/null && break; sleep 1; done
-          sleep 6
-          [ -f "$LOG" ] && while IFS= read -r l; do echo "::notice title=Morph.log::$l"; done < "$LOG"
-          grep -q "интерфейс готов" "$LOG" || { echo "::error title=Запуск::интерфейс не загрузился"; exit 1; }
-          if ! pgrep -f "Morph.app/Contents/MacOS" >/dev/null; then
-            echo "::error title=Запуск::Morph закрылся после старта"
-            log show --last 2m --style compact --predicate 'process == "droplet"' 2>/dev/null | tail -25 | while IFS= read -r l; do echo "::notice title=syslog::$l"; done
+          APP="$PWD/dist/Morph.app"
+          EXE="$(ls "$APP/Contents/MacOS/" | head -n 1)"
+          LOG="$HOME/Library/Logs/Morph.log"; rm -f "$LOG"; mkdir -p "$HOME/Library/Logs"
+          echo "Исполняемый файл: $EXE ($(lipo -archs "$APP/Contents/MacOS/$EXE"))"
+          "$APP/Contents/MacOS/$EXE" > "$RUNNER_TEMP/morph.out" 2>&1 &
+          PID=$!
+          for i in $(seq 1 90); do grep -q "интерфейс готов" "$LOG" 2>/dev/null && break; kill -0 $PID 2>/dev/null || break; sleep 1; done
+          sleep 8
+          report() {
+            [ -f "$LOG" ] && while IFS= read -r l; do echo "::notice title=Morph.log::$l"; done < "$LOG"
+            [ -s "$RUNNER_TEMP/morph.out" ] && tail -n 30 "$RUNNER_TEMP/morph.out" | while IFS= read -r l; do echo "::notice title=stderr::$l"; done
+            log show --last 3m --style compact --predicate "processID == $PID" 2>/dev/null | tail -n 25 | while IFS= read -r l; do echo "::notice title=syslog::$l"; done
             f="$(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -1)"
             [ -n "$f" ] && python3 scripts/crash-summary.py "$f"
-            exit 1
-          fi
-          if grep -q "ОШИБКА" "$LOG"; then echo "::error title=Запуск::ошибки в журнале"; exit 1; fi
-          osascript -e 'tell application id "io.github.morph.converter" to quit' || pkill -f "Morph.app/Contents/MacOS" || true
-          echo "Morph запустился и работает"
+            return 0
+          }
+          if ! kill -0 $PID 2>/dev/null; then echo "::error title=Запуск::Morph завершился"; report; exit 1; fi
+          if ! grep -q "интерфейс готов" "$LOG" 2>/dev/null; then echo "::error title=Запуск::интерфейс не загрузился за 90 с"; report; kill $PID; exit 1; fi
+          if grep -q "ОШИБКА" "$LOG"; then echo "::error title=Запуск::ошибки в журнале"; report; kill $PID; exit 1; fi
+          report
+          test -s "$HOME/Library/Application Support/Morph/web/state.js" || { echo "::error title=Запуск::state.js не создан"; exit 1; }
+          kill $PID; wait $PID 2>/dev/null || true
+          echo "Morph запустился, интерфейс загружен, за 8 секунд не упал"
 
       - name: DMG
         run: |
