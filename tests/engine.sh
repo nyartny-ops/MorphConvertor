@@ -9,7 +9,12 @@ trap 'rm -rf "$W"' EXIT
 pass=0; fail=0
 
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; pass=$((pass+1)); }
-bad()  { printf '  \033[31m✗\033[0m %s\n      %s\n' "$1" "$2"; fail=$((fail+1)); }
+bad()  {
+  printf '  \033[31m✗\033[0m %s\n      %s\n' "$1" "$2"; fail=$((fail+1))
+  # в GitHub Actions — ещё и аннотация, её видно на странице запуска
+  [ -n "${GITHUB_ACTIONS:-}" ] && printf '::error title=%s::%s\n' "$1" "$(printf '%s' "$2" | tr '\n' ' ' | cut -c1-400)"
+  return 0
+}
 run()  { bash "$E" "$@" 2>/dev/null | tail -n 1; }
 # expect <название> <OK|SAME|ERR> <аргументы движка...>
 expect() {

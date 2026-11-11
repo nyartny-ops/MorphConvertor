@@ -1,7 +1,9 @@
 name: Release
 
-# Новый релиз: поменяй номер в файле VERSION и запушь в main —
-# Actions соберёт Morph.dmg, поставит тег vX.Y.Z и опубликует релиз.
+# Новый релиз: поменяй номер в файле VERSION и запушь в main.
+#   1) publish (Linux, сразу): тег vX.Y.Z, релиз, архив с установщиком;
+#   2) dmg (macOS): собирает Morph.dmg и добавляет его в тот же релиз,
+#      как только GitHub выделит macOS-машину.
 # Можно и тегом (git tag v1.2.0 && git push --tags) или вручную: Actions → Release → Run workflow.
 on:
   push:
@@ -13,12 +15,13 @@ on:
 permissions:
   contents: write
 
-
 jobs:
-  build:
-    name: Сборка Morph.dmg
-    runs-on: macos-latest
-    timeout-minutes: 30
+  publish:
+    name: Публикация релиза
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -29,48 +32,64 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "Версия: $V"
 
-      - name: Сборка Morph.app (universal ffmpeg)
-        env:
-          MORPH_VERSION: ${{ steps.v.outputs.version }}
-        run: bash scripts/build.sh --out dist --ffmpeg universal
-
-      - name: DMG и ZIP
+      - name: Архив с установщиком
         run: |
-          V="${{ steps.v.outputs.version }}"
-          mkdir -p stage
-          cp -R dist/Morph.app stage/
-          ln -s /Applications stage/Applications
-          # постоянные имена — чтобы ссылка releases/latest/download/Morph.dmg всегда вела на свежую версию
-          hdiutil create -volname "Morph $V" -srcfolder stage -ov -format UDZO "dist/Morph.dmg"
-          ditto -c -k --sequesterRsrc --keepParent dist/Morph.app "dist/Morph.zip"
-          cd dist && shasum -a 256 Morph.dmg Morph.zip | tee SHA256SUMS.txt
+          mkdir -p dist/Morph
+          cp -R src scripts install.command install.sh README.md LICENSE THIRD_PARTY.md VERSION dist/Morph/
+          cd dist && zip -qr -X Morph-Installer.zip Morph && rm -rf Morph
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Morph-${{ steps.v.outputs.version }}
-          path: |
-            dist/*.dmg
-            dist/*.zip
-            dist/SHA256SUMS.txt
-
-      - name: GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.v.outputs.version }}
           target_commitish: ${{ github.sha }}
           make_latest: true
           name: Morph ${{ steps.v.outputs.version }}
-          files: |
-            dist/*.dmg
-            dist/*.zip
-            dist/SHA256SUMS.txt
+          files: dist/Morph-Installer.zip
           body: |
             ## Установка
-            1. Скачай **Morph.dmg** (ниже, в Assets), открой и перетащи Morph в «Программы».
-            2. Приложение не подписано сертификатом Apple, поэтому при первом запуске macOS его заблокирует. Один раз выполни в Терминале:
-               ```
-               xattr -dr com.apple.quarantine /Applications/Morph.app
-               ```
-               или открой «Системные настройки → Конфиденциальность и безопасность → Всё равно открыть».
 
-            Внутри — ffmpeg для Apple Silicon и Intel. Для XLSX/PPTX нужен бесплатный [LibreOffice](https://www.libreoffice.org).
+            **Самый простой способ** — одна команда в Терминале (соберёт и установит Morph, Gatekeeper не мешает):
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/nyartny-ops/MorphConvertor/main/install.sh | bash
+            ```
+
+            **Morph.dmg** (появится в Assets, когда завершится сборка на macOS): открой и перетащи Morph в «Программы». Приложение не подписано сертификатом Apple, поэтому один раз выполни:
+            ```bash
+            xattr -dr com.apple.quarantine /Applications/Morph.app
+            ```
+
+            **Morph-Installer.zip** — то же, что команда выше: распакуй и запусти `install.command`.
+
+            Внутри DMG — ffmpeg для Apple Silicon и Intel. Для XLSX/PPTX нужен бесплатный [LibreOffice](https://www.libreoffice.org).
+
+  dmg:
+    name: Сборка Morph.dmg
+    needs: publish
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Сборка Morph.app (universal ffmpeg)
+        env:
+          MORPH_VERSION: ${{ needs.publish.outputs.version }}
+        run: bash scripts/build.sh --out dist --ffmpeg universal
+
+      - name: DMG и ZIP
+        run: |
+          V="${{ needs.publish.outputs.version }}"
+          mkdir -p stage
+          cp -R dist/Morph.app stage/
+          ln -s /Applications stage/Applications
+          # постоянные имена — ссылка releases/latest/download/Morph.dmg всегда ведёт на свежую версию
+          hdiutil create -volname "Morph $V" -srcfolder stage -ov -format UDZO dist/Morph.dmg
+          ditto -c -k --sequesterRsrc --keepParent dist/Morph.app dist/Morph.zip
+          cd dist && shasum -a 256 Morph.dmg Morph.zip | tee SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.publish.outputs.version }}
+          files: |
+            dist/Morph.dmg
+            dist/Morph.zip
+            dist/SHA256SUMS.txt

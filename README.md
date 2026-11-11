@@ -14,9 +14,15 @@
 
 <br>
 
-<a href="https://github.com/nyartny-ops/MorphConvertor/releases/latest/download/Morph.dmg"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C%20Morph.dmg-macOS%2012%2B-ff5a1f?style=for-the-badge&logo=apple&logoColor=white&labelColor=111111" alt="Скачать Morph.dmg" height="44"></a>
+<a href="https://github.com/nyartny-ops/MorphConvertor/releases/latest"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-macOS%2012%2B-ff5a1f?style=for-the-badge&logo=apple&logoColor=white&labelColor=111111" alt="Скачать Morph" height="44"></a>
 
 <sub>бесплатно · без регистрации · работает офлайн</sub>
+
+или одной командой в Терминале:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nyartny-ops/MorphConvertor/main/install.sh | bash
+```
 
 <br><br>
 
@@ -48,10 +54,18 @@
 
 ## Установка
 
-### Готовая сборка
+### Одной командой (рекомендуется)
 
-1. Скачай [**Morph.dmg**](https://github.com/nyartny-ops/MorphConvertor/releases/latest/download/Morph.dmg) (все версии — в [Releases](https://github.com/nyartny-ops/MorphConvertor/releases)), открой и перетащи Morph в «Программы».
-2. Morph не подписан сертификатом Apple, поэтому при первом запуске macOS его остановит. Один раз выполни в Терминале:
+```bash
+curl -fsSL https://raw.githubusercontent.com/nyartny-ops/MorphConvertor/main/install.sh | bash
+```
+
+Скрипт скачает исходники, соберёт Morph встроенной в macOS утилитой `osacompile` (Xcode не нужен), докачает ffmpeg под твой Mac, положит приложение в «Программы» и запустит. Так приложение собирается у тебя локально, и Gatekeeper не ругается.
+
+### Morph.dmg
+
+1. Скачай **Morph.dmg** из [последнего релиза](https://github.com/nyartny-ops/MorphConvertor/releases/latest), открой и перетащи Morph в «Программы».
+2. Morph не подписан платным сертификатом Apple, поэтому при первом запуске macOS его остановит. Один раз выполни:
 
    ```bash
    xattr -dr com.apple.quarantine /Applications/Morph.app
@@ -59,19 +73,13 @@
 
    или «Системные настройки → Конфиденциальность и безопасность → Всё равно открыть».
 
-ffmpeg уже внутри — для Apple Silicon и Intel.
-
 ### Из исходников
-
-Xcode не нужен: интерфейс собирается встроенной в macOS утилитой `osacompile`.
 
 ```bash
 git clone https://github.com/nyartny-ops/MorphConvertor.git
 cd MorphConvertor
 bash install.command
 ```
-
-Установщик соберёт приложение, скачает ffmpeg под твой Mac, положит Morph в «Программы» и запустит.
 
 ## Как пользоваться
 

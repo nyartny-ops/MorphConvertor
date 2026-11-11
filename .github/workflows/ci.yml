@@ -19,7 +19,7 @@ jobs:
       - name: shellcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck -S warning -e SC2086,SC2046,SC2015,SC2034 src/convert.sh scripts/build.sh install.command tests/engine.sh
+          shellcheck -S warning -e SC2086,SC2046,SC2015,SC2034 src/convert.sh scripts/build.sh install.command install.sh tests/engine.sh
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - name: Синтаксис JavaScript
