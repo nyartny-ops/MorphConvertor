@@ -94,6 +94,14 @@ jobs:
           MORPH_ENGINE: ${{ github.workspace }}/dist/Morph.app/Contents/Resources/convert.sh
         run: bash tests/engine.sh
 
+      - name: Скрипт приложения через osascript (ошибки с номерами строк)
+        continue-on-error: true
+        run: |
+          perl -e 'alarm 25; exec @ARGV' osascript -l JavaScript "$GITHUB_WORKSPACE/src/main.js" > "$RUNNER_TEMP/osa.txt" 2>&1; echo "exit=$?"
+          tail -n 20 "$RUNNER_TEMP/osa.txt" | while IFS= read -r l; do echo "::notice title=osascript::$l"; done
+          tail -n 10 "$HOME/Library/Logs/Morph.log" 2>/dev/null | while IFS= read -r l; do echo "::notice title=osa-log::$l"; done
+          pkill -f "osascript -l JavaScript" || true
+
       - name: Запуск приложения
         run: |
           APP="$PWD/dist/Morph.app"
@@ -110,6 +118,8 @@ jobs:
             log show --last 3m --style compact --predicate "processID == $PID" 2>/dev/null | tail -n 25 | while IFS= read -r l; do echo "::notice title=syslog::$l"; done
             f="$(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -1)"
             [ -n "$f" ] && python3 scripts/crash-summary.py "$f"
+            osascript -e 'tell application "System Events" to get value of every static text of every window of (first process whose unix id is '"$PID"')' 2>&1 | head -c 800 | while IFS= read -r l; do echo "::notice title=окно-ошибки::$l"; done
+            screencapture -x "$RUNNER_TEMP/screen.png" 2>/dev/null || true
             return 0
           }
           if ! kill -0 $PID 2>/dev/null; then echo "::error title=Запуск::Morph завершился"; report; exit 1; fi
@@ -119,6 +129,14 @@ jobs:
           test -s "$HOME/Library/Application Support/Morph/web/state.js" || { echo "::error title=Запуск::state.js не создан"; exit 1; }
           kill $PID; wait $PID 2>/dev/null || true
           echo "Morph запустился, интерфейс загружен, за 8 секунд не упал"
+
+      - name: Скриншот при ошибке
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screen
+          path: ${{ runner.temp }}/screen.png
+          if-no-files-found: ignore
 
       - name: DMG
         run: |
