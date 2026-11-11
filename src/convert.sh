@@ -19,6 +19,10 @@ if [ "$1" = "--probe" ]; then
   wh="$(printf '%s' "$info" | grep -m1 'Video:' | grep -oE '[0-9]{2,5}x[0-9]{2,5}' | head -n 1)"
   w="${wh%x*}"; h="${wh#*x}"
   if printf '%s' "$info" | grep -Eq 'rotation of -?(90|270)'; then t="$w"; w="$h"; h="$t"; fi
+  if [ -z "$wh" ] && command -v sips >/dev/null 2>&1; then   # HEIC/RAW, которые ffmpeg не читает
+    w="$(sips -g pixelWidth "$2" 2>/dev/null | awk '/pixelWidth/{print $2}')"
+    h="$(sips -g pixelHeight "$2" 2>/dev/null | awk '/pixelHeight/{print $2}')"
+  fi
   echo "${d:-0} ${w:-0} ${h:-0}"; exit 0
 fi
 

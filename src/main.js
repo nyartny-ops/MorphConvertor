@@ -8,6 +8,7 @@
 //  • никаких BOOL в собственных методах — на Intel и Apple Silicon у BOOL разные типы.
 ObjC.import('Cocoa');
 ObjC.import('WebKit');
+try { ObjC.import('ServiceManagement'); } catch (e) {}
 
 var RES = $.NSBundle.mainBundle.resourcePath.js;
 var ENGINE = RES + '/convert.sh';
@@ -38,9 +39,11 @@ var current = null;
 var outDir = '';      // активная папка сохранения ('' = рядом с оригиналом)
 var savedDir = '';    // последняя выбранная папка — помним, даже если сейчас «рядом»
 var timer = null;
-var settings = { mode: 'compress', targets: {}, quality: 65, max: 0, mute: false, radial: true };
+var settings = { mode: 'compress', targets: {}, quality: 65, max: 0, mute: false, radial: true, notify: true, sound: true };
+var settingsRev = 0;   // меняется, когда настройки правят из строки меню — окно их перечитает
 var lastPushed = '';
 var editorSignal = null;   // {id, n} — попросить окно открыть редактор
+var editorN = 0;
 
 // ---------- журнал: ~/Library/Logs/Morph.log ----------
 var LOG = HOME + '/Library/Logs/Morph.log';
@@ -74,12 +77,20 @@ function basename(p) { return p.replace(/\/+$/, '').split('/').pop(); }
 function isDir(p) { var d = Ref(); return FM.fileExistsAtPathIsDirectory(p, d) && !!d[0]; }
 function exists(p) { return FM.fileExistsAtPath(p); }
 function isExec(p) { return FM.isExecutableFileAtPath(p); }
+var BUNDLE = $.NSBundle.mainBundle.bundlePath.js;
+function isPackage(p) { try { return !!$.NSWorkspace.sharedWorkspace.isFilePackageAtPath(p); } catch (e) { return false; } }
+// никогда не берём файлы самого Morph и служебные папки
+function cleanPaths(paths) {
+  return paths.filter(function (p) {
+    return p && p.indexOf(BUNDLE + '/') !== 0 && p !== BUNDLE && p.indexOf(HOME + '/Library/Application Support/Morph') !== 0;
+  });
+}
 function fileSize(p) {
   var a = FM.attributesOfItemAtPathError(p, null);
   return (a && !a.isNil()) ? Number(a.fileSize) : 0;
 }
 function kindOf(p) {
-  if (isDir(p)) return 'folder';
+  if (isDir(p) && !isPackage(p)) return 'folder';
   var n = basename(p), i = n.lastIndexOf('.');
   if (i <= 0) return 'other';
   return EXT2KIND[n.slice(i + 1).toLowerCase()] || 'other';
@@ -90,7 +101,8 @@ function listFiles(dir) {
     var rel = f.js;
     if (rel.split('/').some(function (s) { return s.charAt(0) === '.'; })) continue;
     var full = dir + '/' + rel;
-    if (!isDir(full)) res.push(full);
+    if (!isDir(full) || isPackage(full)) res.push(full);
+    if (isPackage(full)) en.skipDescendants;
   }
   return res;
 }
@@ -151,7 +163,7 @@ function push() {
         meta: it.meta || null };
     }),
     outDir: outDir, savedDir: savedDir, savedDirShort: savedDir ? shortPath(savedDir) : '',
-    running: !!current, tools: TOOLS || tools(), settings: settings,
+    running: !!current, tools: TOOLS || tools(), settings: settings, settingsRev: settingsRev,
     drag: dragOn, toast: toastMsg ? { id: toastId, text: toastMsg } : null,
     editor: editorSignal
   };
@@ -166,8 +178,8 @@ function push() {
 function addPaths(paths, extra) {
   var known = {}, added = [];
   items.forEach(function (it) { known[it.path] = it; });
-  paths.forEach(function (p) {
-    var list = isDir(p) ? listFiles(p) : [p];
+  cleanPaths(paths).forEach(function (p) {
+    var list = (isDir(p) && !isPackage(p)) ? cleanPaths(listFiles(p)) : [p];
     list.forEach(function (f) {
       var it = known[f];
       if (it) {
@@ -254,7 +266,7 @@ function next() {
   var mute = it.mute == null ? settings.mute : it.mute;
   var t = $.NSTask.alloc.init;
   t.setLaunchPath($('/bin/bash'));
-  t.setArguments($([ENGINE, it.path, targetFor(it), String(it.quality || settings.quality), String(settings.max || 0), mute ? '1' : '0', outDir]));
+  t.setArguments($([ENGINE, it.path, targetFor(it), String(it.quality || settings.quality), String(it.max != null ? it.max : (settings.max || 0)), mute ? '1' : '0', outDir]));
   var env = $.NSProcessInfo.processInfo.environment.mutableCopy;
   env.setObjectForKey($(prog), 'MORPH_PROGRESS');
   if (it.trim) env.setObjectForKey($(it.trim[0].toFixed(3) + ':' + it.trim[1].toFixed(3)), 'MORPH_TRIM');
@@ -326,7 +338,8 @@ function human(n) {
 // уведомление о файлах, отправленных через круговое меню
 function finishedBatch() {
   var batch = items.filter(function (it) { return it.fromRadial && !it.notified && it.status !== 'wait' && it.status !== 'work'; });
-  if (!batch.length) { try { $.NSSound.soundNamed('Glass').play; } catch (e) {} return; }
+  if (settings.sound) { try { $.NSSound.soundNamed('Glass').play; } catch (e) {} }
+  if (!batch.length || !settings.notify) { batch.forEach(function (it) { it.notified = true; }); return; }
   var ok = 0, err = 0, a = 0, b = 0;
   batch.forEach(function (it) {
     it.notified = true;
@@ -360,7 +373,7 @@ function dragPaths() {
 
 function openEditor(it) {
   probe(it);
-  editorSignal = { id: it.id, n: (editorSignal ? editorSignal.n : 0) + 1 };
+  editorSignal = { id: it.id, n: ++editorN };
   showWindow();
   push();
 }
@@ -375,7 +388,7 @@ function handle(m) {
       if (IN_CI && !ui.ciRadial) { ui.ciRadial = true; $.NSTimer.scheduledTimerWithTimeIntervalTargetSelectorUserInfoRepeats(1.0, ui.ctrl, 'ciRadial:', $(), false); }
       break;
     case 'settings': settings = Object.assign(settings, m.settings || {}); saveSettings(); updateStatusMenu(); break;
-    case 'dropped': addPaths(dragPaths()); break;
+    case 'dropped': addPaths(takeDrop() || dragPaths()); showWindow(); break;
     case 'add':
       try {
         var r = SA.chooseFile({ withPrompt: 'Выбери файлы для Morph', multipleSelectionsAllowed: true });
@@ -432,10 +445,45 @@ function handle(m) {
   }
 }
 
+// ---------- пути из настоящего перетаскивания ----------
+// Окно и меню — WKWebView-наследник, который при отпускании файла запоминает пути
+// из pasteboard именно этого перетаскивания (общий буфер перетаскивания бывает устаревшим).
+function captureDrop(sender) {
+  try {
+    var urls = sender.draggingPasteboard.readObjectsForClassesOptions($([$.NSURL]), $({}));
+    var res = [];
+    if (urls && !urls.isNil()) for (var i = 0; i < urls.count; i++) {
+      var u = urls.objectAtIndex(i);
+      if (u.isFileURL) res.push(u.path.js);
+    }
+    ui.lastDrop = { paths: res, t: Date.now() };
+  } catch (e) { log('captureDrop: ' + e.message); }
+}
+function takeDrop() {
+  var d = ui.lastDrop; ui.lastDrop = null;
+  return (d && Date.now() - d.t < 5000 && d.paths.length) ? d.paths : null;
+}
+var WEB_CLASS = 'WKWebView';
+(function registerWebView() {
+  // BOOL — 'bool' на Apple Silicon и 'char' на Intel
+  var variants = [{ b: 'bool', yes: true }, { b: 'char', yes: 1 }];
+  function methods(v) {
+    return { 'prepareForDragOperation:': { types: [v.b, ['id']], implementation: function (sender) { captureDrop(sender); return v.yes; } } };
+  }
+  for (var k = 0; k < variants.length; k++) {
+    try {
+      ObjC.registerSubclass({ name: 'MorphWebView' + k, superclass: 'WKWebView', methods: methods(variants[k]) });
+      WEB_CLASS = 'MorphWebView' + k;
+      return;
+    } catch (e) {}
+  }
+  log('перехват перетаскивания недоступен — использую общий буфер');
+})();
+
 // ---------- круговое меню: Shift или ⌥ во время перетаскивания ----------
 var SHIFT = 1 << 17, OPTION = 1 << 19;
-var watch = { down: false, base: 0, active: false, shown: false, paths: [], n: 0, hideAt: 0 };
-var RADIAL = 420;
+var watch = { down: false, base: 0, active: false, shown: false, paths: [], n: 0, hideAt: 0, flip: 0, modWas: false };
+var RADIAL = 560;
 
 function primaryKind(paths) {
   var k = null;
@@ -446,8 +494,13 @@ function primaryKind(paths) {
   }
   return k || 'other';
 }
+function telegramApp() {
+  var c = ['/Applications/Telegram.app', '/Applications/Telegram Desktop.app', HOME + '/Applications/Telegram.app', HOME + '/Applications/Telegram Desktop.app'];
+  for (var i = 0; i < c.length; i++) if (exists(c[i])) return c[i];
+  return '';
+}
 function radialState(open) {
-  try { writeFile(WEBDIR + '/radial-state.js', 'window.radial && radial.state(' + JSON.stringify({ n: watch.n, open: open }) + ');'); } catch (e) {}
+  try { writeFile(WEBDIR + '/radial-state.js', 'window.radial && radial.state(' + JSON.stringify({ n: watch.n, open: open, flip: watch.flip }) + ');'); } catch (e) {}
 }
 function buildRadial() {
   if (ui.radial) return;
@@ -461,14 +514,14 @@ function buildRadial() {
   p.setReleasedWhenClosed(false);
   var cfg = $.WKWebViewConfiguration.alloc.init;
   cfg.userContentController.addScriptMessageHandlerName(ui.ctrl, $('morph'));
-  var w = $.WKWebView.alloc.initWithFrameConfiguration($.NSMakeRect(0, 0, RADIAL, RADIAL), cfg);
+  var w = $[WEB_CLASS].alloc.initWithFrameConfiguration($.NSMakeRect(0, 0, RADIAL, RADIAL), cfg);
   try { w.setValueForKey($(false), 'drawsBackground'); } catch (e) {}
   p.setContentView(w);
   ui.radial = p; ui.radialWeb = w;
 }
 function radialShow(paths, mods) {
   buildRadial();
-  watch.shown = true; watch.paths = paths; watch.n++; watch.hideAt = 0;
+  watch.shown = true; watch.paths = cleanPaths(paths); watch.n++; watch.hideAt = 0; watch.flip = 0; watch.modWas = true;
   var loc = $.NSEvent.mouseLocation;
   var x = loc.x - RADIAL / 2, y = loc.y - RADIAL / 2;
   var scr = $.NSScreen.screens;
@@ -479,12 +532,11 @@ function radialShow(paths, mods) {
       y = Math.max(f.origin.y, Math.min(y, f.origin.y + f.size.height - RADIAL));
     }
   }
-  // где курсор внутри панели (если её прижало к краю экрана)
   var cx = Math.round(loc.x - x), cy = Math.round(RADIAL - (loc.y - y));
   ui.radial.setFrameDisplay($.NSMakeRect(x, y, RADIAL, RADIAL), true);
   radialState(true);
-  var q = '?k=' + primaryKind(paths) + '&c=' + paths.length + '&m=' + ((mods & OPTION) ? 'option' : 'shift') +
-          '&n=' + watch.n + '&x=' + cx + '&y=' + cy;
+  var q = '?k=' + primaryKind(watch.paths) + '&c=' + watch.paths.length + '&m=' + ((mods & OPTION) ? 'option' : 'shift') +
+          '&n=' + watch.n + '&x=' + cx + '&y=' + cy + '&tg=' + (telegramApp() ? 1 : 0);
   var url = $.NSURL.URLWithString($('file://' + encodeURI(WEBDIR + '/radial.html') + q));
   ui.radialWeb.loadFileURLAllowingReadAccessToURL(url, $.NSURL.fileURLWithPath(WEBDIR));
   ui.radial.orderFrontRegardless;
@@ -493,28 +545,95 @@ function radialHideSoon(sec) {
   radialState(false);
   watch.hideAt = Date.now() + sec * 1000;
 }
-function radialDrop(m) {
-  var paths = watch.paths.length ? watch.paths : dragPaths();
-  radialHideSoon(0.42);
-  if (!paths.length) return;
-  if (m.action === 'open') { addPaths(paths); showWindow(); return; }
-  if (m.action === 'edit') {
-    var added = addPaths(paths, { fromRadial: true });
-    if (added.length) openEditor(added[0]);
-    return;
+function radialHideNow() {
+  watch.hideAt = 0; watch.shown = false; watch.paths = [];
+  if (!ui.radial) return;
+  ui.radial.orderOut(null);
+  // очистить страницу, чтобы при следующем показе не мелькнул старый кадр
+  try { ui.radialWeb.loadHTMLStringBaseURL($('<html style="background:transparent"></html>'), null); } catch (e) {}
+}
+
+// ---------- действия кругового меню ----------
+function shareVia(kind, paths) {
+  var names = {
+    airdrop: [$.NSSharingServiceNameSendViaAirDrop, 'com.apple.share.AirDrop.send'],
+    mail: [$.NSSharingServiceNameComposeEmail, 'com.apple.share.Mail.compose'],
+    messages: [$.NSSharingServiceNameComposeMessage, 'com.apple.share.Messages.compose']
+  }[kind];
+  var items = $(paths.map(function (p) { return $.NSURL.fileURLWithPath(p); }));
+  $.NSApplication.sharedApplication.activateIgnoringOtherApps(true);
+  for (var i = 0; i < names.length; i++) {
+    try {
+      var n = names[i]; if (!n) continue;
+      var svc = $.NSSharingService.sharingServiceNamed(typeof n === 'string' ? $(n) : n);
+      if (svc && !svc.isNil() && svc.canPerformWithItems(items)) { svc.performWithItems(items); return true; }
+    } catch (e) { log('share ' + kind + ': ' + e.message); }
   }
-  var extra = { fromRadial: true, notified: false, target: m.target || 'same', mute: m.mute ? true : null, trim: null, crop: null };
-  addPaths(paths, extra);
-  start();
+  toast('Не получилось открыть ' + ({ airdrop: 'AirDrop', mail: 'Почту', messages: 'Сообщения' })[kind]);
+  return false;
+}
+function openWith(app, paths) {
+  var t = $.NSTask.alloc.init;
+  t.setLaunchPath($('/usr/bin/open'));
+  t.setArguments($(['-a', app].concat(paths)));
+  try { t.launch; } catch (e) { log('open: ' + e.message); }
+}
+function copyFiles(paths, asText) {
+  var pb = $.NSPasteboard.generalPasteboard;
+  pb.clearContents;
+  if (asText) pb.setStringForType($(paths.join('\n')), $.NSPasteboardTypeString);
+  else pb.writeObjects($(paths.map(function (p) { return $.NSURL.fileURLWithPath(p); })));
+  try {
+    if (settings.notify) SA.displayNotification(asText ? 'Путь скопирован' : 'Можно вставлять: ⌘V', { withTitle: 'Morph', subtitle: paths.length + ' ' + (paths.length === 1 ? 'файл' : 'файла') });
+  } catch (e) {}
+}
+// центрированный кадр нужной пропорции
+function centerCrop(w, h, aspect) {
+  var p = aspect.split(':'), r = (+p[0]) / (+p[1]);
+  var cw = w, ch = Math.round(w / r);
+  if (ch > h) { ch = h; cw = Math.round(h * r); }
+  cw -= cw % 2; ch -= ch % 2;
+  return [cw, ch, Math.round((w - cw) / 2), Math.round((h - ch) / 2)];
+}
+
+function radialDrop(m) {
+  var paths = cleanPaths(takeDrop() || watch.paths || []);
+  radialHideSoon(0.45);
+  if (!paths.length) { toast('Не удалось получить файлы из перетаскивания'); return; }
+  switch (m.action) {
+    case 'open': addPaths(paths); showWindow(); return;
+    case 'edit':
+      var added = addPaths(paths, { fromRadial: true, trim: null, crop: null });
+      if (added.length) openEditor(added[0]);
+      return;
+    case 'share': shareVia(m.service, paths); return;
+    case 'telegram': var tg = telegramApp(); if (tg) openWith(tg, paths); else toast('Telegram не найден'); return;
+    case 'copy': copyFiles(paths, false); return;
+    case 'copypath': copyFiles(paths, true); return;
+    case 'preset':
+      var list = addPaths(paths, { fromRadial: true, notified: false, trim: null, crop: null, mute: null });
+      list.forEach(function (it) {
+        it.target = (m.targets && m.targets[it.kind]) || 'same';
+        it.max = m.max != null ? m.max : null;
+        it.quality = m.quality || null;
+        if (m.aspect && (it.kind === 'image' || it.kind === 'video' || it.kind === 'gif')) {
+          probe(it);
+          if (it.meta && it.meta.w && it.meta.h) it.crop = centerCrop(it.meta.w, it.meta.h, m.aspect);
+        }
+      });
+      start();
+      return;
+    default:   // convert
+      addPaths(paths, { fromRadial: true, notified: false, target: m.target || 'same', mute: m.mute ? true : null, trim: null, crop: null, max: null, quality: null });
+      start();
+  }
 }
 function dragTick() {
   try {
-    if (watch.hideAt && Date.now() >= watch.hideAt) {
-      watch.hideAt = 0; watch.shown = false; watch.paths = [];
-      if (ui.radial) ui.radial.orderOut(null);
-    }
+    if (watch.hideAt && Date.now() >= watch.hideAt) radialHideNow();
     var cc = Number(DPB.changeCount);
     var pressed = (Number($.NSEvent.pressedMouseButtons) & 1) === 1;
+    var mods = Number($.NSEvent.modifierFlags) & (SHIFT | OPTION);
     if (!pressed) {
       if (watch.down && watch.shown && !watch.hideAt) radialHideSoon(0.6); // отпустили мимо меню
       watch.down = false; watch.active = false; watch.base = cc;
@@ -522,20 +641,64 @@ function dragTick() {
     }
     watch.down = true;
     if (!watch.active && cc !== watch.base) watch.active = true;   // началось перетаскивание
+    if (watch.shown && !watch.hideAt) {
+      // повторное нажатие ⇧ / ⌥ — следующая страница меню
+      if (mods && !watch.modWas) { watch.flip++; radialState(true); }
+      watch.modWas = !!mods;
+      return;
+    }
     if (!settings.radial || !watch.active || watch.shown) return;
-    var mods = Number($.NSEvent.modifierFlags);
-    if (mods & (SHIFT | OPTION)) {
-      var paths = dragPaths();
+    if (mods) {
+      var paths = cleanPaths(dragPaths());
       if (paths.length) radialShow(paths, mods);
     }
   } catch (e) { log('dragTick: ' + e.message); }
 }
 
-// ---------- строка меню ----------
-function updateStatusMenu() {
-  if (!ui.menuRadial) return;
-  ui.menuRadial.setState(settings.radial ? 1 : 0);
+// ---------- запуск при входе ----------
+function loginEnabled() {
+  try { return Number($.SMAppService.mainAppService.status) === 1; } catch (e) { return false; }
 }
+function setLogin(on) {
+  try {
+    var svc = $.SMAppService.mainAppService;
+    var ok = on ? svc.registerAndReturnError(null) : svc.unregisterAndReturnError(null);
+    if (!ok && on) toast('macOS не разрешила автозапуск — включи Morph в «Объектах входа»');
+  } catch (e) { toast('Автозапуск недоступен в этой версии macOS'); }
+}
+
+// ---------- строка меню ----------
+var MENU = {};
+function changed() { settingsRev++; saveSettings(); lastPushed = ''; push(); }
+function menuPick(tag) {
+  switch (tag) {
+    case 1: settings.radial = !settings.radial; break;
+    case 11: settings.quality = 90; break;
+    case 12: settings.quality = 65; break;
+    case 13: settings.quality = 30; break;
+    case 21: outDir = ''; break;
+    case 22: if (savedDir && isDir(savedDir)) outDir = savedDir; else { handle({ cmd: 'chooseOut' }); } break;
+    case 23: handle({ cmd: 'chooseOut' }); break;
+    case 31: settings.notify = !settings.notify; break;
+    case 32: settings.sound = !settings.sound; break;
+    case 41: setLogin(!loginEnabled()); break;
+    case 51: settings.mode = 'compress'; break;
+    case 52: settings.mode = 'convert'; break;
+  }
+  changed();
+}
+function refreshMenu() {
+  var q = settings.quality;
+  function st(item, on) { if (item) item.setState(on ? 1 : 0); }
+  st(MENU[1], settings.radial);
+  st(MENU[11], q >= 80); st(MENU[12], q > 45 && q < 80); st(MENU[13], q <= 45);
+  st(MENU[21], !outDir); st(MENU[22], !!outDir);
+  if (MENU[22]) MENU[22].setTitle($(savedDir ? 'В папку «' + basename(savedDir) + '»' : 'В папку…'));
+  st(MENU[31], settings.notify); st(MENU[32], settings.sound);
+  st(MENU[41], loginEnabled());
+  st(MENU[51], settings.mode !== 'convert'); st(MENU[52], settings.mode === 'convert');
+}
+function updateStatusMenu() { try { refreshMenu(); } catch (e) {} }
 function buildStatusItem() {
   if (ui.status) return;
   try {
@@ -543,18 +706,43 @@ function buildStatusItem() {
     var img = $.NSImage.imageWithSystemSymbolNameAccessibilityDescription($('arrow.triangle.2.circlepath'), $('Morph'));
     if (img && !img.isNil()) { img.setTemplate(true); si.button.setImage(img); } else si.button.setTitle($('Morph'));
     var menu = $.NSMenu.alloc.init;
-    var add = function (title, sel, key) {
-      var mi = $.NSMenuItem.alloc.initWithTitleActionKeyEquivalent($(title), sel, $(key || ''));
-      mi.setTarget(ui.ctrl); menu.addItem(mi); return mi;
+    menu.setAutoenablesItems(false);
+    var item = function (parent, title, tag, sel, key) {
+      var mi = $.NSMenuItem.alloc.initWithTitleActionKeyEquivalent($(title), sel || 'menuPick:', $(key || ''));
+      mi.setTarget(ui.ctrl); if (tag) { mi.setTag(tag); MENU[tag] = mi; }
+      parent.addItem(mi); return mi;
     };
-    add('Открыть Morph', 'showWindow:');
+    var header = function (parent, title) {
+      var mi = $.NSMenuItem.alloc.initWithTitleActionKeyEquivalent($(title), null, $(''));
+      mi.setEnabled(false); parent.addItem(mi);
+    };
+    var sub = function (title) {
+      var mi = $.NSMenuItem.alloc.initWithTitleActionKeyEquivalent($(title), null, $(''));
+      var m = $.NSMenu.alloc.init; m.setAutoenablesItems(false);
+      mi.setSubmenu(m); menu.addItem(mi); return m;
+    };
+    item(menu, 'Открыть Morph', 0, 'showWindow:', 'o');
     menu.addItem($.NSMenuItem.separatorItem);
-    ui.menuRadial = add('Меню по Shift / ⌥ при перетаскивании', 'toggleRadial:');
+    item(menu, 'Меню по ⇧ / ⌥ при перетаскивании', 1);
+    var mm = sub('Режим окна');
+    item(mm, 'Сжать', 51); item(mm, 'Конвертировать', 52);
+    var qm = sub('Качество');
+    item(qm, 'Высокое', 11); item(qm, 'Баланс', 12); item(qm, 'Сильное сжатие', 13);
+    var dm = sub('Сохранять');
+    item(dm, 'Рядом с оригиналом', 21); item(dm, 'В папку…', 22);
+    dm.addItem($.NSMenuItem.separatorItem);
+    item(dm, 'Выбрать папку…', 23);
     menu.addItem($.NSMenuItem.separatorItem);
-    add('Выйти из Morph', 'quitApp:', 'q');
+    header(menu, 'После обработки');
+    item(menu, 'Уведомление', 31); item(menu, 'Звук', 32);
+    menu.addItem($.NSMenuItem.separatorItem);
+    item(menu, 'Запускать при входе в систему', 41);
+    menu.addItem($.NSMenuItem.separatorItem);
+    item(menu, 'Выйти из Morph', 0, 'quitApp:', 'q');
+    menu.setDelegate(ui.ctrl);   // menuNeedsUpdate: — галочки всегда актуальны
     si.setMenu(menu);
     ui.status = si;
-    updateStatusMenu();
+    refreshMenu();
   } catch (e) { log('строка меню: ' + e.message); }
 }
 
@@ -573,15 +761,16 @@ var CTRL_METHODS = {
     try { radialShow([RES + '/ui.html', RES + '/radial.html'], SHIFT); log('radial показано'); } catch (e) { log('ОШИБКА radial: ' + e.message); }
   } },
   'showWindow:': { types: ['void', ['id']], implementation: function () { showWindow(); } },
-  'toggleRadial:': { types: ['void', ['id']], implementation: function () {
-    settings.radial = !settings.radial; saveSettings(); updateStatusMenu(); lastPushed = ''; push();
+  'menuPick:': { types: ['void', ['id']], implementation: function (sender) {
+    try { menuPick(Number(sender.tag)); } catch (e) { log('menu: ' + e.message); }
   } },
+  'menuNeedsUpdate:': { types: ['void', ['id']], implementation: function () { updateStatusMenu(); } },
   'quitApp:': { types: ['void', ['id']], implementation: function () {
     try { stop(); } catch (e) {}
     $.NSApplication.sharedApplication.terminate(null);
   } },
   'windowWillClose:': { types: ['void', ['id']], implementation: function () {
-    // окно закрыли — Morph остаётся в фоне ради кругового меню (выход — ⌘Q или строка меню)
+    // окно закрыли — Morph остаётся в строке меню ради кругового меню (выход — ⌘Q или строка меню)
     log('окно закрыто, работаю в фоне');
   } },
   'appWillTerminate:': { types: ['void', ['id']], implementation: function () {
@@ -589,11 +778,17 @@ var CTRL_METHODS = {
     try { stop(); } catch (e) {}
   } }
 };
-try {
-  ObjC.registerSubclass({ name: 'MorphController', protocols: ['WKScriptMessageHandler'], methods: CTRL_METHODS });
-} catch (e) {
-  ObjC.registerSubclass({ name: 'MorphController', methods: CTRL_METHODS });
-}
+(function () {
+  var tries = [['WKScriptMessageHandler', 'NSMenuDelegate'], ['WKScriptMessageHandler'], null];
+  for (var i = 0; i < tries.length; i++) {
+    try {
+      var def = { name: 'MorphController', methods: CTRL_METHODS };
+      if (tries[i]) def.protocols = tries[i];
+      ObjC.registerSubclass(def);
+      return;
+    } catch (e) {}
+  }
+})();
 
 // полоса сверху окна: тянуть окно, двойной клик — развернуть
 ObjC.registerSubclass({
@@ -651,7 +846,7 @@ function buildUI() {
 
   var cfg = $.WKWebViewConfiguration.alloc.init;
   cfg.userContentController.addScriptMessageHandlerName(ui.ctrl, $('morph'));
-  var web = $.WKWebView.alloc.initWithFrameConfiguration($.NSMakeRect(0, 0, W, H), cfg);
+  var web = $[WEB_CLASS].alloc.initWithFrameConfiguration($.NSMakeRect(0, 0, W, H), cfg);
   try { web.setValueForKey($(false), 'drawsBackground'); } catch (e) { log('прозрачность: ' + e.message); }
   web.setAutoresizingMask(18);
   root.addSubview(web);

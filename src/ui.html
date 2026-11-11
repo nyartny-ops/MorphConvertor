@@ -21,10 +21,10 @@ body{height:100%;padding-top:30px;background:rgba(17,17,18,.86);color:var(--text
 body.web{padding-top:0;background:var(--bg)}
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;text-align:left}
 .mono{font-family:var(--mono)}
-.app{display:grid;grid-template-columns:1fr 320px;height:100%}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 320px;grid-template-rows:minmax(0,1fr);height:100%}
 
 /* ---------- левая колонка ---------- */
-.left{display:flex;flex-direction:column;min-width:0;padding:4px 20px 16px}
+.left{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:hidden;padding:4px 20px 16px}
 .top{display:flex;align-items:center;gap:14px;height:40px;margin-bottom:10px}
 .logo{display:flex;align-items:center;gap:8px;font-weight:650;font-size:15px;letter-spacing:-.02em}
 .logo i{width:10px;height:10px;background:var(--acc);border-radius:2px;transition:transform .5s var(--spring)}
@@ -54,7 +54,7 @@ body.running .logo i{animation:spin 1.4s var(--out) infinite}
 .head,.ri{display:grid;grid-template-columns:40px 1fr 128px 64px 52px;gap:14px;align-items:center}
 .head{padding:0 4px 8px;border-bottom:1px solid var(--line);font:10.5px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--faint)}
 .head .r{text-align:right}
-.list{flex:1;overflow-y:auto;margin-right:-8px;padding-right:8px}
+.list{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;margin-right:-8px;padding-right:8px}
 .list::-webkit-scrollbar{width:6px}.list::-webkit-scrollbar-thumb{background:var(--raise2);border-radius:6px}
 .row{position:relative;border-bottom:1px solid var(--line);transition:background .12s,opacity .26s var(--out),transform .3s var(--out),height .26s var(--out);overflow:hidden}
 .row.enter{opacity:0;transform:translateY(10px)}
@@ -108,8 +108,8 @@ body.dragging .over::before{inset:12px}
 body.dragging .over .c{transform:none}
 
 /* ---------- панель ---------- */
-.panel{border-left:1px solid var(--line);background:rgba(255,255,255,.015);display:flex;flex-direction:column;min-height:0}
-.scroll{flex:1;overflow-y:auto;padding:8px 20px 8px}
+.panel{border-left:1px solid var(--line);background:rgba(255,255,255,.015);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.scroll{flex:1;min-height:0;overflow-y:auto;padding:8px 20px 8px}
 .scroll::-webkit-scrollbar{width:0}
 .sec{padding:16px 0;border-bottom:1px solid var(--line)}
 .sec:first-child{padding-top:6px}
@@ -171,6 +171,7 @@ input[type=range]:active::-webkit-slider-thumb{transform:scale(1.3)}
 .qm .w.a2{animation-delay:1.2s}.qm .w.a3{animation-delay:2.4s}.qm .w.a4{animation-delay:3.6s}
 @keyframes wedge{0%,4%{fill:var(--raise2)}8%,22%{fill:var(--acc)}27%,100%{fill:var(--raise2)}}
 .qm p{font-size:11.5px;color:var(--dim);line-height:1.5}
+.qm p b{color:var(--text);font-weight:550}
 .qm kbd{font:600 10.5px var(--mono);padding:1px 5px;border:1px solid var(--line2);border-radius:4px;color:var(--text)}
 .off .qm{opacity:.4}
 
@@ -317,7 +318,7 @@ body.web .sheet{inset:0}
         <div class="toggle" id="radialT"><span>Меню по <b>⇧</b> или <b>⌥</b> при перетаскивании</span><div class="sw"></div></div>
         <div class="qm">
           <svg viewBox="-32 -32 64 64"><g id="qmw"></g><circle r="9" fill="#151516" stroke="rgba(255,255,255,.14)"/></svg>
-          <p>Тащи файл из Finder или с рабочего стола и зажми <kbd>⇧</kbd> / <kbd>⌥</kbd>. Отпусти на действие — Morph сделает всё в фоне и пришлёт уведомление.</p>
+          <p>Тащи файл из Finder и зажми <kbd>⇧</kbd> / <kbd>⌥</kbd>. Нажми ещё раз — следующая страница: <b>отправить</b> (AirDrop, Telegram, почта) и <b>соцсети</b> (сторис, пост, квадрат).</p>
         </div>
       </div>
     </div>
@@ -720,14 +721,14 @@ function edResult(){
 }
 
 /* ---------- приём состояния ---------- */
-var lastSeq=-1,settingsApplied=false,lastToast=0,lastEditor=0;
+var lastSeq=-1,settingsApplied=false,lastToast=0,lastEditor=0,lastRev=-1;
 window.morph={
   state:function(s){
     if(s.seq!=null){if(s.seq===lastSeq)return;lastSeq=s.seq}
     if(s.toast&&s.toast.id!==lastToast){lastToast=s.toast.id;if(settingsApplied)toast(s.toast.text)}
     var was=S.running;S=s;
-    if(s.settings&&!settingsApplied){set=Object.assign(set,s.settings);settingsApplied=true}
-    else if(s.settings)set.radial=s.settings.radial;
+    // настройки из приложения: при запуске и когда их поменяли в строке меню
+    if(s.settings&&(!settingsApplied||s.settingsRev!==lastRev)){set=Object.assign(set,s.settings);settingsApplied=true;lastRev=s.settingsRev}
     if(ED.it){var cur=byId(ED.it.id);if(cur){var hadMeta=!!ED.it.meta;ED.it=cur;if(!hadMeta&&cur.meta){edBuildMedia();edPane()}}}
     if(s.editor&&s.editor.n!==lastEditor){lastEditor=s.editor.n;var it=byId(s.editor.id);if(it&&(!ED.it||ED.it.id!==it.id))edOpen(it)}
     render();
