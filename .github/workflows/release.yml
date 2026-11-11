@@ -94,20 +94,6 @@ jobs:
           MORPH_ENGINE: ${{ github.workspace }}/dist/Morph.app/Contents/Resources/convert.sh
         run: bash tests/engine.sh
 
-      - name: Пошаговая проверка скрипта (bisect)
-        continue-on-error: true
-        run: |
-          mkdir -p "$HOME/Library/Logs"
-          echo "::notice title=trivial::$(perl -e 'alarm 15; exec @ARGV' osascript -l JavaScript -e 'ObjC.import("Cocoa"); "ok " + $.NSProcessInfo.processInfo.operatingSystemVersionString.js' 2>&1 | tr '\n' ' ')"
-          N=$(wc -l < src/main.js)
-          for L in $N; do
-            head -n $L src/main.js > "$RUNNER_TEMP/part.js"; echo '"part-ok"' >> "$RUNNER_TEMP/part.js"
-            out="$(MORPH_CI=1 perl -e 'alarm 15; exec @ARGV' osascript -l JavaScript "$RUNNER_TEMP/part.js" 2>&1 | tr '\n' ' ' | cut -c1-500)"; rc=$?
-            echo "::notice title=lines 1-$L::rc=$rc $out"
-          done
-          out="$(MORPH_CI=1 perl -e 'alarm 25; exec @ARGV' osascript -l JavaScript src/main.js 2>&1 | tr '\n' ' ' | cut -c1-900)"
-          echo "::notice title=full run()::$out"
-
       - name: Запуск приложения
         run: |
           APP="$PWD/dist/Morph.app"
