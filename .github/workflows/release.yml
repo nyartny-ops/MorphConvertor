@@ -100,7 +100,7 @@ jobs:
           mkdir -p "$HOME/Library/Logs"
           echo "::notice title=trivial::$(perl -e 'alarm 15; exec @ARGV' osascript -l JavaScript -e 'ObjC.import("Cocoa"); "ok " + $.NSProcessInfo.processInfo.operatingSystemVersionString.js' 2>&1 | tr '\n' ' ')"
           N=$(wc -l < src/main.js)
-          for L in 13 36 76 111 286 313 350 367 428 $N; do
+          for L in $N; do
             head -n $L src/main.js > "$RUNNER_TEMP/part.js"; echo '"part-ok"' >> "$RUNNER_TEMP/part.js"
             out="$(MORPH_CI=1 perl -e 'alarm 15; exec @ARGV' osascript -l JavaScript "$RUNNER_TEMP/part.js" 2>&1 | tr '\n' ' ' | cut -c1-500)"; rc=$?
             echo "::notice title=lines 1-$L::rc=$rc $out"

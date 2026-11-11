@@ -348,22 +348,44 @@ function dropped(sender) {
   return res;
 }
 
-// контейнер окна принимает перетаскивание файлов (веб-виду приём отключаем)
-ObjC.registerSubclass({
-  name: 'MorphDropView',
-  superclass: 'NSView',
-  methods: {
-    'draggingEntered:': { types: ['unsigned long', ['id']], implementation: function () { setDrag(true); return 1; } },
-    'draggingUpdated:': { types: ['unsigned long', ['id']], implementation: function () { return 1; } },
+// контейнер окна принимает перетаскивание файлов (веб-виду приём отключаем).
+// Типы методов должны совпасть с NSView, а они зависят от архитектуры:
+// BOOL — 'bool' на Apple Silicon и 'char' на Intel, NSDragOperation — NSUInteger.
+function dropMethods(T) {
+  return {
+    'draggingEntered:': { types: [T.op, ['id']], implementation: function () { setDrag(true); return 1; } },
+    'draggingUpdated:': { types: [T.op, ['id']], implementation: function () { return 1; } },
     'draggingExited:': { types: ['void', ['id']], implementation: function () { setDrag(false); } },
-    'prepareForDragOperation:': { types: ['bool', ['id']], implementation: function () { return true; } },
-    'performDragOperation:': { types: ['bool', ['id']], implementation: function (sender) {
+    'prepareForDragOperation:': { types: [T.b, ['id']], implementation: function () { return T.yes; } },
+    'performDragOperation:': { types: [T.b, ['id']], implementation: function (sender) {
       setDrag(false);
-      try { var r = dropped(sender); addPaths(r); return r.length > 0; }
-      catch (e) { log('drop: ' + e.message); return false; }
+      var ok = false;
+      try { var r = dropped(sender); addPaths(r); ok = r.length > 0; }
+      catch (e) { log('drop: ' + e.message); }
+      return ok ? T.yes : T.no;
     } }
+  };
+}
+var DROP_CLASS = 'MorphDropView';
+(function registerDropView() {
+  var variants = [
+    { op: 'unsigned long', b: 'bool', yes: true, no: false },
+    { op: 'unsigned long long', b: 'bool', yes: true, no: false },
+    { op: 'unsigned long', b: 'char', yes: 1, no: 0 },
+    { op: 'unsigned long long', b: 'char', yes: 1, no: 0 }
+  ];
+  var errs = [];
+  for (var k = 0; k < variants.length; k++) {
+    try {
+      ObjC.registerSubclass({ name: 'MorphDropView' + k, superclass: 'NSView', methods: dropMethods(variants[k]) });
+      DROP_CLASS = 'MorphDropView' + k;
+      return;
+    } catch (e) { errs.push(e.message); }
   }
-});
+  // запасной вариант — без перетаскивания в окно (файлы можно кидать на иконку и через «Файлы»)
+  log('перетаскивание недоступно: ' + errs.join(' / '));
+  DROP_CLASS = 'NSView';
+})();
 
 // ---------- окно ----------
 function buildUI() {
@@ -389,7 +411,8 @@ function buildUI() {
   ui.window = win;
   $.NSNotificationCenter.defaultCenter.addObserverSelectorNameObject(ui.ctrl, 'appWillTerminate:', $('NSApplicationWillTerminateNotification'), $());
 
-  var root = $.MorphDropView.alloc.initWithFrame($.NSMakeRect(0, 0, W, H));
+  var root = $[DROP_CLASS].alloc.initWithFrame($.NSMakeRect(0, 0, W, H));
+  log('класс окна: ' + DROP_CLASS);
   root.registerForDraggedTypes($(['public.file-url', 'NSFilenamesPboardType']));
   win.setContentView(root);
 
