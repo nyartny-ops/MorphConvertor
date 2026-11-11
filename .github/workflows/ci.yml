@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     name: Проверка кода
@@ -28,14 +32,22 @@ jobs:
   engine-linux:
     name: Движок (Linux, ffmpeg)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg zip
-      - run: bash tests/engine.sh
+      - name: ffmpeg (статическая сборка — быстрее apt)
+        run: |
+          curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz | tar -xJ -C /tmp
+          echo "$(ls -d /tmp/ffmpeg-*/bin)" >> "$GITHUB_PATH"
+      - run: ffmpeg -version | head -1 && bash tests/engine.sh
 
   macos:
     name: Сборка и тесты (macOS)
-    runs-on: macos-15
+    # macOS-машины GitHub часто в очереди — гоняем их только вручную и в pull request,
+    # а на каждый push хватает Linux. Релиз собирается отдельным workflow.
+    if: github.event_name != 'push'
+    runs-on: macos-14
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: ffmpeg для тестов
