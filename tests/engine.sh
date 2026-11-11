@@ -3,7 +3,7 @@
 # Работает на macOS и Linux (нужен ffmpeg; части на sips/textutil проверяются только на macOS).
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-E="$ROOT/src/convert.sh"
+E="${MORPH_ENGINE:-$ROOT/src/convert.sh}"   # можно проверить движок внутри собранного .app
 W="$(mktemp -d)"
 trap 'rm -rf "$W"' EXIT
 pass=0; fail=0
