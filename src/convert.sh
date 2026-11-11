@@ -6,7 +6,7 @@
 
 IN="$1"; TARGET="$2"; Q="${3:-70}"; MAX="${4:-0}"; MUTE="${5:-0}"; OUTDIR="${6:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-export PATH="$HERE/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH="$HERE/bin:/opt/homebrew/bin:/usr/local/bin:/opt/local/bin:${PATH:-}:/usr/bin:/bin:/usr/sbin:/sbin"
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/morph.XXXXXX")" || { printf "ERR\tнет временной папки\n"; exit 1; }
 trap 'rm -rf "$TMP"' EXIT

@@ -15,12 +15,12 @@ jobs:
     name: Проверка кода
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: shellcheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           shellcheck -S warning -e SC2086,SC2046,SC2015,SC2034 src/convert.sh scripts/build.sh install.command install.sh tests/engine.sh
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: 22 }
       - name: Синтаксис JavaScript
         run: |
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: ffmpeg (статическая сборка — быстрее apt)
         run: |
           curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz | tar -xJ -C /tmp
@@ -49,7 +49,7 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: ffmpeg для тестов
         run: brew install ffmpeg
       - name: Тесты движка (включая sips, textutil, PDFKit)
