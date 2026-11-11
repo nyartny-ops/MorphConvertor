@@ -65,7 +65,8 @@ jobs:
   dmg:
     name: Сборка и проверка Morph.dmg
     needs: publish
-    runs-on: macos-latest
+    # arm64-машины GitHub часто перегружены; Intel-раннер свободнее, а приложение universal
+    runs-on: macos-15-intel
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
