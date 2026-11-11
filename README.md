@@ -104,7 +104,7 @@ bash scripts/build.sh --ffmpeg universal      # с universal ffmpeg, как в �
 ```
 
 - **CI** на каждый push: shellcheck, проверка синтаксиса, тесты движка на Linux и macOS, сборка приложения.
-- **Релиз**: `git tag v1.0.0 && git push --tags` — GitHub Actions соберёт `.dmg` и `.zip` и опубликует релиз.
+- **Релиз**: поменяй номер в `VERSION` и запушь в `main` — GitHub Actions соберёт `Morph.dmg`, поставит тег и опубликует релиз.
 
 Журнал приложения: `~/Library/Logs/Morph.log`.
 
