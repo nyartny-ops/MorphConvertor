@@ -75,28 +75,39 @@ function tools() {
 var TOOLS = null;
 
 // ---------- связь с интерфейсом ----------
-function js(code) {
-  if (!ui.web) return;
-  // completionHandler должен быть настоящим nil: через performSelector передаём его как обычный объект
-  try { ui.web.performSelectorWithObjectWithObject('evaluateJavaScript:completionHandler:', $(code), null); }
-  catch (e) { log('js: ' + e.message); }
-}
+// Приложение → окно: без evaluateJavaScript (его completion-блок через мост JXA роняет WebKit).
+// Пишем состояние в state.js рядом с ui.html, окно само подхватывает его несколько раз в секунду.
+var WEBDIR = $.NSHomeDirectory().js + '/Library/Application Support/Morph/web';
 var LS_RE = new RegExp('[' + String.fromCharCode(0x2028, 0x2029) + ']', 'g');
-function push(withSettings) {
+var seq = 0, dragOn = false, toastMsg = null, toastId = 0;
+
+function writeFile(path, text) {
+  $(text).writeToFileAtomicallyEncodingError(path, true, $.NSUTF8StringEncoding, null);
+}
+function prepareWebDir() {
+  FM.createDirectoryAtPathWithIntermediateDirectoriesAttributesError(WEBDIR, true, $(), null);
+  rm(WEBDIR + '/ui.html');
+  FM.copyItemAtPathToPathError(RES + '/ui.html', WEBDIR + '/ui.html', null);
+}
+function toast(text) { toastMsg = text; toastId++; push(); }
+function push() {
   var st = {
     items: items.map(function (it) {
       return { id: it.id, name: it.name, kind: it.kind, size: it.size, status: it.status, info: it.info || '',
         a: it.a || 0, b: it.b || 0, outName: it.out ? basename(it.out) : '', progress: it.progress == null ? -1 : it.progress };
     }),
     outDir: outDir, savedDir: savedDir, savedDirShort: savedDir ? shortPath(savedDir) : '',
-    running: !!current, tools: TOOLS || tools()
+    running: !!current, tools: TOOLS || tools(), settings: settings,
+    drag: dragOn, toast: toastMsg ? { id: toastId, text: toastMsg } : null
   };
-  if (withSettings) st.settings = settings;
   var json = JSON.stringify(st).replace(LS_RE, ' ');
-  if (!withSettings && json === lastPushed) return;
+  if (json === lastPushed) return;
   lastPushed = json;
-  js('window.morph && morph.state(' + json + ')');
+  seq++;
+  try { writeFile(WEBDIR + '/state.js', 'window.morph && morph.state(' + json.replace(/^\{/, '{"seq":' + seq + ',') + ');'); }
+  catch (e) { log('state: ' + e.message); }
 }
+function setDrag(on) { dragOn = on; push(); }
 
 function addPaths(paths) {
   var known = {};
@@ -231,7 +242,7 @@ function reveal(paths) {
 function handle(m) {
   switch (m.cmd) {
     case 'log': log('ui: ' + m.text); break;
-    case 'ready': log('интерфейс готов'); try { ui.web.unregisterDraggedTypes; } catch (e) {} TOOLS = tools(); push(true); break;
+    case 'ready': log('интерфейс готов'); try { ui.web.unregisterDraggedTypes; } catch (e) {} TOOLS = tools(); lastPushed = ''; push(); break;
     case 'settings': settings = Object.assign(settings, m.settings || {}); saveSettings(); break;
     case 'add':
       try {
@@ -299,7 +310,7 @@ var CTRL_METHODS = {
     types: ['void', ['id', 'id']],
     implementation: function (ucc, msg) {
       try { handle(ObjC.deepUnwrap(msg.body) || {}); }
-      catch (e) { log('handle: ' + e.message); js('morph.toast(' + JSON.stringify('Ошибка: ' + e.message) + ')'); }
+      catch (e) { log('handle: ' + e.message); toast('Ошибка: ' + e.message); }
     }
   },
   'tick:': { types: ['void', ['id']], implementation: function () { try { tick(); } catch (e) { log('tick: ' + e.message); } } },
@@ -335,12 +346,12 @@ ObjC.registerSubclass({
   name: 'MorphDropView',
   superclass: 'NSView',
   methods: {
-    'draggingEntered:': { types: ['unsigned long', ['id']], implementation: function () { js('morph.drag(true)'); return 1; } },
+    'draggingEntered:': { types: ['unsigned long', ['id']], implementation: function () { setDrag(true); return 1; } },
     'draggingUpdated:': { types: ['unsigned long', ['id']], implementation: function () { return 1; } },
-    'draggingExited:': { types: ['void', ['id']], implementation: function () { js('morph.drag(false)'); } },
+    'draggingExited:': { types: ['void', ['id']], implementation: function () { setDrag(false); } },
     'prepareForDragOperation:': { types: ['bool', ['id']], implementation: function () { return true; } },
     'performDragOperation:': { types: ['bool', ['id']], implementation: function (sender) {
-      js('morph.drag(false)');
+      setDrag(false);
       try { var r = dropped(sender); addPaths(r); return r.length > 0; }
       catch (e) { log('drop: ' + e.message); return false; }
     } }
@@ -398,7 +409,9 @@ function buildUI() {
   strip.setAutoresizingMask(2 | 8);
   root.addSubview(strip);
 
-  web.loadFileURLAllowingReadAccessToURL($.NSURL.fileURLWithPath(RES + '/ui.html'), $.NSURL.fileURLWithPath(RES));
+  prepareWebDir();
+  push();
+  web.loadFileURLAllowingReadAccessToURL($.NSURL.fileURLWithPath(WEBDIR + '/ui.html'), $.NSURL.fileURLWithPath(WEBDIR));
   log('интерфейс загружается');
 
   win.center;

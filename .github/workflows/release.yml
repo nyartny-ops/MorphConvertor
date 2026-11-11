@@ -101,7 +101,13 @@ jobs:
           sleep 6
           [ -f "$LOG" ] && while IFS= read -r l; do echo "::notice title=Morph.log::$l"; done < "$LOG"
           grep -q "интерфейс готов" "$LOG" || { echo "::error title=Запуск::интерфейс не загрузился"; exit 1; }
-          pgrep -f "Morph.app/Contents/MacOS" >/dev/null || { echo "::error title=Запуск::Morph закрылся после старта"; ls -t ~/Library/Logs/DiagnosticReports | head -3; exit 1; }
+          if ! pgrep -f "Morph.app/Contents/MacOS" >/dev/null; then
+            echo "::error title=Запуск::Morph закрылся после старта"
+            log show --last 2m --style compact --predicate 'process == "droplet"' 2>/dev/null | tail -25 | while IFS= read -r l; do echo "::notice title=syslog::$l"; done
+            f="$(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -1)"
+            [ -n "$f" ] && python3 scripts/crash-summary.py "$f"
+            exit 1
+          fi
           if grep -q "ОШИБКА" "$LOG"; then echo "::error title=Запуск::ошибки в журнале"; exit 1; fi
           osascript -e 'tell application id "io.github.morph.converter" to quit' || pkill -f "Morph.app/Contents/MacOS" || true
           echo "Morph запустился и работает"

@@ -328,9 +328,15 @@ function renderList(){
 }
 function render(){renderMode();renderQuality();renderSizes();renderDest();renderCTA();renderList()}
 
+var lastSeq=-1,settingsApplied=false,lastToast=0;
 window.morph={
   state:function(s){
-    var was=S.running;S=s;if(s.settings)set=Object.assign(set,s.settings);render();
+    if(s.seq!=null){if(s.seq===lastSeq)return;lastSeq=s.seq}
+    document.body.classList.toggle('dragging',!!s.drag);
+    if(s.toast&&s.toast.id!==lastToast){lastToast=s.toast.id;if(settingsApplied)toast(s.toast.text)}
+    var was=S.running;S=s;
+    if(s.settings&&!settingsApplied){set=Object.assign(set,s.settings);settingsApplied=true}
+    render();
     if(was&&!s.running){var sv=0;s.items.forEach(function(i){if(i.status==='ok'&&i.b<i.a)sv+=i.a-i.b});toast(sv?'Готово — минус '+human(sv):'Готово')}
   },
   drag:function(on){document.body.classList.toggle('dragging',!!on)},
@@ -365,6 +371,14 @@ document.addEventListener('keydown',function(e){
 document.addEventListener('contextmenu',function(e){e.preventDefault()});
 if(!window.webkit||!window.webkit.messageHandlers)document.body.classList.add('web');
 render();send('ready');
+// состояние приложения лежит в state.js рядом со страницей — подтягиваем его постоянно
+(function poll(){
+  if(document.body.classList.contains('web'))return;
+  var el=document.createElement('script');
+  el.src='state.js?'+Date.now();
+  el.onload=el.onerror=function(){el.remove();setTimeout(poll,document.hidden?800:150)};
+  document.head.appendChild(el);
+})();
 })();
 </script>
 </body>
