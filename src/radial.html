@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Morph</title>
+<style>
+:root{
+  --wedge:rgba(22,22,24,.97); --wedge-h:rgba(44,44,48,.97); --line:rgba(255,255,255,.10);
+  --text:#ededee; --dim:#9a9a9f; --faint:#66666c; --acc:#ff5a1f; --ok:#5fd38d;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  --spring:cubic-bezier(.18,1.3,.38,1); --out:cubic-bezier(.2,.8,.2,1); --in:cubic-bezier(.5,0,.75,0);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:transparent;overflow:hidden;
+  font:12px/1.2 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;color:var(--text);
+  -webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;cursor:default}
+
+.ring{position:absolute;width:340px;height:340px;margin:-170px 0 0 -170px;
+  transform:scale(.45) rotate(-24deg);opacity:0;
+  transition:transform .46s var(--spring),opacity .16s linear;filter:drop-shadow(0 18px 40px rgba(0,0,0,.45))}
+.ring.open{transform:none;opacity:1}
+.ring.cancel{transform:scale(.72);opacity:0;transition:transform .2s var(--in),opacity .18s linear}
+.ring.done{transform:translate(var(--gx),var(--gy)) scale(.55);opacity:0;
+  transition:transform .34s var(--in) .2s,opacity .26s linear .26s}
+svg{position:absolute;inset:0;overflow:visible}
+
+.slice{transition:transform .16s var(--out),opacity .2s linear;opacity:0}
+.ring.open .slice{opacity:1;transition:transform .16s var(--out),opacity .22s linear calc(var(--i)*24ms + 60ms)}
+.slice path{fill:var(--wedge);stroke:var(--line);stroke-width:1;transition:fill .12s linear}
+.slice.hover{transform:translate(calc(var(--dx)*9px),calc(var(--dy)*9px))}
+.slice.hover path{fill:var(--wedge-h);stroke:rgba(255,90,31,.55)}
+.slice.chosen path{fill:var(--acc);stroke:transparent}
+.ring.done .slice:not(.chosen){opacity:.0;transition:opacity .16s linear}
+.slice.chosen{transform:translate(calc(var(--dx)*14px),calc(var(--dy)*14px)) scale(1.04);transition:transform .22s var(--spring)}
+
+.lbl{position:absolute;width:76px;height:52px;margin:-26px 0 0 -38px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  pointer-events:none;opacity:0;transform:translate(calc(var(--dx)*-26px),calc(var(--dy)*-26px)) scale(.7);
+  transition:transform .16s var(--out),opacity .2s linear,color .12s linear;color:var(--dim)}
+.ring.open .lbl{opacity:1;transform:none;transition:transform .42s var(--spring) calc(var(--i)*24ms + 80ms),opacity .2s linear calc(var(--i)*24ms + 80ms),color .12s linear}
+.lbl.hover{color:var(--text);transform:translate(calc(var(--dx)*9px),calc(var(--dy)*9px)) scale(1.08)!important;transition:transform .16s var(--out),color .12s linear!important}
+.lbl.chosen{color:#160800;transform:translate(calc(var(--dx)*14px),calc(var(--dy)*14px)) scale(1.1)!important}
+.ring.done .lbl:not(.chosen){opacity:0;transition:opacity .14s linear!important}
+.lbl .fmt{font:700 15px var(--mono);letter-spacing:.02em}
+.lbl svg{position:static;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.lbl .t{font-size:10.5px;font-weight:600;letter-spacing:-.005em;white-space:nowrap}
+.lbl .fmt + .t{font-weight:500;font-size:9.5px;opacity:.7}
+
+.hub{position:absolute;left:50%;top:50%;width:112px;height:112px;margin:-56px 0 0 -56px;border-radius:50%;
+  background:rgba(17,17,18,.97);border:1px solid var(--line);display:grid;place-items:center;text-align:center;
+  transform:scale(0);transition:transform .4s var(--spring) .05s,background .14s linear}
+.ring.open .hub{transform:scale(1)}
+.hub.hover{background:rgba(40,16,10,.97)}
+.hub .txt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0 12px;
+  transition:opacity .12s linear .07s,transform .22s var(--out) .07s}
+.hub .txt.out{opacity:0;transform:translateY(5px);transition:opacity .07s linear,transform .12s var(--in)}
+.hub b{font-size:12.5px;font-weight:650;letter-spacing:-.01em}
+.hub span{font-size:10px;color:var(--faint);line-height:1.3}
+.hub .k{font:600 9.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--acc)}
+.pointer{position:absolute;left:50%;top:50%;width:0;height:0;transform:rotate(var(--rot,0deg));transition:transform .24s var(--out),opacity .15s linear;opacity:0}
+.pointer::after{content:"";position:absolute;left:56px;top:-3px;width:6px;height:6px;border-radius:50%;background:var(--acc);box-shadow:0 0 0 3px rgba(255,90,31,.18)}
+.pointer.on{opacity:1}
+.check{position:absolute;inset:0;display:grid;place-items:center;opacity:0}
+.check svg{position:static;width:34px;height:34px;fill:none;stroke:var(--ok);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:30;stroke-dashoffset:30}
+.ring.done .check{opacity:1}
+.ring.done .check svg{stroke-dashoffset:0;transition:stroke-dashoffset .28s var(--out) .05s}
+.ring.done .hub .txt{opacity:0}
+</style>
+</head>
+<body>
+<div class="ring" id="ring">
+  <svg id="wedges" viewBox="-170 -170 340 340"></svg>
+  <div id="labels"></div>
+  <div class="pointer" id="pointer"></div>
+  <div class="hub" id="hub">
+    <div class="txt" id="t1"></div>
+    <div class="txt out" id="t2"></div>
+    <div class="check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+  </div>
+</div>
+<script>
+window.onerror=function(m,u,l){try{window.webkit.messageHandlers.morph.postMessage({cmd:'jserr',text:'radial.html: '+m+' @'+l})}catch(e){}};
+(function(){
+var Q={};location.search.slice(1).split('&').forEach(function(p){var kv=p.split('=');Q[kv[0]]=decodeURIComponent(kv[1]||'')});
+var KIND=Q.k||'other', COUNT=+Q.c||1, N=+Q.n||0;
+
+var I={
+  compress:'<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>',
+  trim:'<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12"/>',
+  crop:'<path d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2"/>',
+  mute:'<path d="M11 5L6 9H2v6h4l5 4V5zM22 9l-6 6M16 9l6 6"/>',
+  zip:'<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/>',
+  open:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5"/>'
+};
+function fmt(t,label,sub,desc){return{action:'convert',target:t,fmt:label,t:sub||'',desc:desc}}
+var compress={action:'convert',target:'same',icon:'compress',t:'Сжать',desc:'Тот же формат, меньше вес'};
+var openIn={action:'open',icon:'open',t:'В Morph',desc:'Открыть в окне Morph'};
+var zip={action:'convert',target:'zip',icon:'zip',t:'ZIP',desc:'Упаковать в архив'};
+var SETS={
+  image:[compress,fmt('jpg','JPG','','Картинка → JPG'),fmt('png','PNG','','Картинка → PNG'),fmt('webp','WEBP','','Картинка → WebP, лёгкая для сайтов'),fmt('pdf','PDF','','Картинка → PDF'),{action:'edit',icon:'crop',t:'Кадр',desc:'Кадрировать: 1:1, 4:5, 9:16…'},openIn],
+  gif:[compress,fmt('mp4','MP4','','GIF → MP4, в разы легче'),fmt('webm','WEBM','','GIF → WebM'),fmt('webp','WEBP','','GIF → анимированный WebP'),{action:'edit',icon:'trim',t:'Обрезать',desc:'Обрезать по времени и кадру'},openIn],
+  video:[compress,fmt('mp4','MP4','H.264','Видео → MP4 (H.264)'),fmt('mp4hevc','H.265','','Видео → H.265, ещё меньше'),fmt('gif','GIF','','Видео → GIF'),fmt('mp3','MP3','звук','Вытащить звук в MP3'),{action:'convert',target:'same',mute:true,icon:'mute',t:'Без звука',desc:'Убрать звук, сохранить видео'},{action:'edit',icon:'trim',t:'Обрезать',desc:'Обрезать и кадрировать'},openIn],
+  audio:[compress,fmt('mp3','MP3','','Аудио → MP3'),fmt('m4a','M4A','','Аудио → M4A (AAC)'),fmt('wav','WAV','','Аудио → WAV без потерь'),fmt('flac','FLAC','','Аудио → FLAC без потерь'),{action:'edit',icon:'trim',t:'Обрезать',desc:'Вырезать кусок трека'},openIn],
+  pdf:[compress,fmt('png','PNG','стр.','PDF → PNG по страницам'),fmt('jpg','JPG','стр.','PDF → JPG по страницам'),fmt('txt','TXT','','Вытащить текст'),zip,openIn],
+  doc:[fmt('pdf','PDF','','Документ → PDF'),fmt('docx','DOCX','','Документ → Word'),fmt('txt','TXT','','Только текст'),fmt('rtf','RTF','','Документ → RTF'),zip,openIn],
+  sheet:[fmt('xlsx','XLSX','','Таблица → Excel'),fmt('csv','CSV','','Таблица → CSV'),fmt('pdf','PDF','','Таблица → PDF'),zip,openIn],
+  slides:[fmt('pdf','PDF','','Презентация → PDF'),fmt('pptx','PPTX','','Презентация → PowerPoint'),zip,openIn],
+  mixed:[compress,zip,openIn], other:[zip,openIn]
+};
+var KN={image:'картинки',gif:'gif',video:'видео',audio:'аудио',pdf:'pdf',doc:'документы',sheet:'таблицы',slides:'слайды',mixed:'разные файлы',other:'файлы'};
+var acts=SETS[KIND]||SETS.other;
+if(acts.length<3)acts=acts.concat([]);
+
+var ring=document.getElementById('ring'), wedges=document.getElementById('wedges'), labels=document.getElementById('labels'),
+    hub=document.getElementById('hub'), pointer=document.getElementById('pointer'), t1=document.getElementById('t1'), t2=document.getElementById('t2');
+var CX=+Q.x||210, CY=+Q.y||210;
+ring.style.left=CX+'px'; ring.style.top=CY+'px';
+
+var R=162, r=62, n=acts.length, step=360/n, gap=Math.min(3.2,step*.08), start=-90-step/2;
+function pt(a,rad){a=a*Math.PI/180;return[(Math.cos(a)*rad).toFixed(2),(Math.sin(a)*rad).toFixed(2)]}
+function plural(n,a,b,c){var m=n%10,h=n%100;return(m==1&&h!=11)?a:(m>=2&&m<=4&&(h<10||h>=20))?b:c}
+var svgNS='http://www.w3.org/2000/svg', els=[];
+acts.forEach(function(a,i){
+  var a0=start+i*step+gap/2, a1=start+(i+1)*step-gap/2, mid=(a0+a1)/2, large=(a1-a0)>180?1:0;
+  var p0=pt(a0,R),p1=pt(a1,R),p2=pt(a1,r),p3=pt(a0,r);
+  var d='M'+p0+' A'+R+' '+R+' 0 '+large+' 1 '+p1+' L'+p2+' A'+r+' '+r+' 0 '+large+' 0 '+p3+' Z';
+  var dx=Math.cos(mid*Math.PI/180), dy=Math.sin(mid*Math.PI/180);
+  var g=document.createElementNS(svgNS,'g'); g.setAttribute('class','slice');
+  g.style.setProperty('--i',i); g.style.setProperty('--dx',dx.toFixed(3)); g.style.setProperty('--dy',dy.toFixed(3));
+  var path=document.createElementNS(svgNS,'path'); path.setAttribute('d',d); g.appendChild(path); wedges.appendChild(g);
+  var l=document.createElement('div'); l.className='lbl';
+  var lr=(R+r)/2; l.style.left=(170+dx*lr)+'px'; l.style.top=(170+dy*lr)+'px';
+  l.style.setProperty('--i',i); l.style.setProperty('--dx',dx.toFixed(3)); l.style.setProperty('--dy',dy.toFixed(3));
+  l.innerHTML=(a.fmt?'<div class="fmt">'+a.fmt+'</div>':'<svg viewBox="0 0 24 24">'+I[a.icon]+'</svg>')+'<div class="t">'+a.t+'</div>';
+  labels.appendChild(l);
+  els.push({a:a,g:g,l:l,mid:mid,dx:dx,dy:dy});
+});
+
+var idleHTML='<div class="k">'+KN[KIND]+'</div><b>'+COUNT+' '+plural(COUNT,'файл','файла','файлов')+'</b><span>тяни к действию<br>в центре — отмена</span>';
+var front=t1, back=t2;
+function hubText(html){
+  if(front.innerHTML===html)return;
+  back.innerHTML=html; back.classList.remove('out'); front.classList.add('out');
+  var t=front; front=back; back=t;
+}
+hubText(idleHTML);
+
+var hover=-2, rot=null, finished=false;
+function setHover(i){
+  if(finished||i===hover)return; hover=i;
+  els.forEach(function(e,k){e.g.classList.toggle('hover',k===i);e.l.classList.toggle('hover',k===i)});
+  hub.classList.toggle('hover',i===-1);
+  if(i>=0){
+    var target=els[i].mid;
+    if(rot===null)rot=target;
+    else{var d=((target-rot)%360+540)%360-180;rot+=d}   // поворот по кратчайшему пути
+    pointer.style.setProperty('--rot',rot+'deg'); pointer.classList.add('on');
+    hubText('<b>'+(els[i].a.fmt||els[i].a.t)+'</b><span>'+els[i].a.desc+'</span>');
+  } else {
+    pointer.classList.remove('on');
+    hubText(i===-1?'<b>Отмена</b><span>отпусти здесь,<br>чтобы ничего не делать</span>':idleHTML);
+  }
+}
+function hitTest(x,y){
+  var dx=x-CX, dy=y-CY, dist=Math.sqrt(dx*dx+dy*dy);
+  if(dist<r-4)return -1;
+  if(dist>R+60)return -2;
+  var ang=Math.atan2(dy,dx)*180/Math.PI;
+  var rel=((ang-start)%360+360)%360;
+  return Math.min(n-1,Math.floor(rel/step));
+}
+function send(m){try{window.webkit.messageHandlers.morph.postMessage(m)}catch(e){console.log(m)}}
+
+document.addEventListener('dragenter',function(e){e.preventDefault()});
+document.addEventListener('dragover',function(e){e.preventDefault();if(e.dataTransfer)e.dataTransfer.dropEffect='copy';setHover(hitTest(e.clientX,e.clientY))});
+document.addEventListener('dragleave',function(e){if(e.clientX<=0||e.clientY<=0||e.clientX>=innerWidth||e.clientY>=innerHeight)setHover(-2)});
+document.addEventListener('drop',function(e){
+  e.preventDefault(); if(finished)return;
+  var i=hitTest(e.clientX,e.clientY);
+  if(i<0){close();send({cmd:'radialCancel'});return}
+  finished=true;
+  var el=els[i];
+  els.forEach(function(x,k){x.g.classList.remove('hover');x.l.classList.remove('hover')});
+  el.g.classList.add('chosen'); el.l.classList.add('chosen'); pointer.classList.remove('on'); hub.classList.remove('hover');
+  ring.style.setProperty('--gx',(el.dx*46)+'px'); ring.style.setProperty('--gy',(el.dy*46)+'px');
+  ring.classList.add('done');
+  send({cmd:'radialDrop',action:el.a.action,target:el.a.target||null,mute:!!el.a.mute});
+});
+function close(){ if(finished)return; finished=true; ring.classList.remove('open'); ring.classList.add('cancel'); }
+
+// приложение сообщает, что перетаскивание закончилось мимо меню
+window.radial={state:function(s){ if(s.n===N&&!s.open)close(); }};
+(function poll(){
+  if(finished)return;
+  var el=document.createElement('script'); el.src='radial-state.js?'+Date.now();
+  el.onload=el.onerror=function(){el.remove();setTimeout(poll,60)};
+  document.head.appendChild(el);
+})();
+
+requestAnimationFrame(function(){requestAnimationFrame(function(){ring.classList.add('open')})});
+send({cmd:'log',text:'radial ready '+KIND+' x'+COUNT});
+if(Q.demo)setTimeout(function(){setHover(+Q.demo)},40);   // для скриншотов
+})();
+</script>
+</body>
+</html>

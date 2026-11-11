@@ -1,12 +1,26 @@
 #!/bin/bash
 # Morph — движок конвертации одного файла.
 # usage: convert.sh <input> <target|same> <quality 10-100> <maxside 0=orig> <mute 0|1> <outdir|"">
+# правки (необязательно, через окружение):
+#   MORPH_TRIM="начало:конец"  — секунды, для видео/аудио/GIF (конец можно не указывать)
+#   MORPH_CROP="w:h:x:y"       — кадрирование в пикселях исходника, для видео/GIF/картинок
 # stdout (одна строка):  OK<TAB>out<TAB>insize<TAB>outsize   |   SAME<TAB>msg   |   ERR<TAB>msg
 # Совместим с bash 3.2 (стандартный в macOS).
 
 IN="$1"; TARGET="$2"; Q="${3:-70}"; MAX="${4:-0}"; MUTE="${5:-0}"; OUTDIR="${6:-}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export PATH="$HERE/bin:/opt/homebrew/bin:/usr/local/bin:/opt/local/bin:${PATH:-}:/usr/bin:/bin:/usr/sbin:/sbin"
+
+# --probe <файл>: печатает "длительность_сек ширина высота" (размер — как на экране, с учётом поворота)
+if [ "$1" = "--probe" ]; then
+  FF="$(command -v ffmpeg)"; [ -n "$FF" ] || { echo "0 0 0"; exit 0; }
+  info="$("$FF" -hide_banner -i "$2" 2>&1)"
+  d="$(printf '%s' "$info" | sed -n 's/.*Duration: \([0-9]*\):\([0-9]*\):\([0-9.]*\).*/\1 \2 \3/p' | head -n 1 | awk '{printf "%.3f", $1*3600+$2*60+$3}')"
+  wh="$(printf '%s' "$info" | grep -m1 'Video:' | grep -oE '[0-9]{2,5}x[0-9]{2,5}' | head -n 1)"
+  w="${wh%x*}"; h="${wh#*x}"
+  if printf '%s' "$info" | grep -Eq 'rotation of -?(90|270)'; then t="$w"; w="$h"; h="$t"; fi
+  echo "${d:-0} ${w:-0} ${h:-0}"; exit 0
+fi
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/morph.XXXXXX")" || { printf "ERR\tнет временной папки\n"; exit 1; }
 trap 'rm -rf "$TMP"' EXIT
@@ -69,11 +83,30 @@ case "$ext" in
 esac
 fi
 
+# ---------- правки: обрезка по времени и кадрирование ----------
+ORIG_IN="$IN"
+EDIT=0; SEEK=""; VF_PRE=""; TDUR=""
+if [ -n "${MORPH_TRIM:-}" ]; then
+  ts="${MORPH_TRIM%%:*}"; te="${MORPH_TRIM#*:}"; [ "$te" = "$MORPH_TRIM" ] && te=""
+  echo "$ts" | grep -Eq '^[0-9]+(\.[0-9]+)?$' || die "неверное начало обрезки: $ts"
+  if [ -n "$te" ]; then
+    echo "$te" | grep -Eq '^[0-9]+(\.[0-9]+)?$' || die "неверный конец обрезки: $te"
+    TDUR="$(awk -v a="$ts" -v b="$te" 'BEGIN{d=b-a; if(d<=0) exit 1; printf "%.3f", d}')" || die "конец обрезки раньше начала"
+    SEEK="-ss $ts -t $TDUR"
+  else SEEK="-ss $ts"; fi
+  EDIT=1
+fi
+if [ -n "${MORPH_CROP:-}" ]; then
+  echo "$MORPH_CROP" | grep -Eq '^[0-9]+:[0-9]+:[0-9]+:[0-9]+$' || die "неверная рамка кадрирования: $MORPH_CROP"
+  VF_PRE="crop=$MORPH_CROP,"; EDIT=1
+fi
+
 # длительность — для полоски прогресса в окне
 if [ -n "${MORPH_PROGRESS:-}" ] && [ -n "$FFMPEG" ]; then
   case "$kind" in video|audio|gif)
     "$FFMPEG" -hide_banner -i "$IN" 2>&1 | sed -n 's/.*Duration: \([0-9]*\):\([0-9]*\):\([0-9.]*\).*/\1 \2 \3/p' | head -n 1 \
-      | awk '{printf "%d\n", ($1*3600+$2*60+$3)*1000000}' > "$MORPH_PROGRESS.dur";;
+      | awk '{printf "%d\n", ($1*3600+$2*60+$3)*1000000}' > "$MORPH_PROGRESS.dur"
+    [ -n "$TDUR" ] && awk -v d="$TDUR" 'BEGIN{printf "%d\n", d*1000000}' > "$MORPH_PROGRESS.dur";;
   esac
 fi
 
@@ -93,11 +126,13 @@ if [ "$T" = "same" ]; then
 fi
 VCODEC=h264
 [ "$T" = "mp4hevc" ] && { T=mp4; VCODEC=hevc; }
+# правка — это всегда новый файл, сравнивать размер с оригиналом не нужно
+[ "$EDIT" = 1 ] && COMPRESS=0
 
 # ---------- имя результата ----------
 outfile() {  # $1 = расширение
   local e="$1" o="$OUTDIR/$base.$1" n=2
-  if [ "$COMPRESS" = 1 ] || [ -e "$o" ]; then o="$OUTDIR/$base (morph).$e"; fi
+  if [ "$COMPRESS" = 1 ] || [ "$EDIT" = 1 ] || [ -e "$o" ]; then o="$OUTDIR/$base (morph).$e"; fi
   while [ -e "$o" ]; do o="$OUTDIR/$base (morph $n).$e"; n=$((n+1)); done
   printf '%s' "$o" > "$TMP/curout"
   printf '%s' "$o"
@@ -107,9 +142,9 @@ fsize() { if [ -d "$1" ]; then du -sk "$1" | awk '{print $1*1024}'; else wc -c <
 finish() {  # $1 = результат
   local o="$1"
   [ -e "$o" ] || die "результат не создан"
-  local a b; a=$(fsize "$IN"); b=$(fsize "$o")
+  local a b; a=$(fsize "$ORIG_IN"); b=$(fsize "$o")
   [ "$b" -gt 0 ] 2>/dev/null || { rm -rf "$o"; die "получился пустой файл"; }
-  if [ "$COMPRESS" = 1 ] && [ "$b" -ge "$a" ]; then
+  if [ "$COMPRESS" = 1 ] && [ "$b" -ge "$a" ] && [ "$o" != "$ORIG_IN" ]; then
     rm -rf "$o"
     printf 'SAME\tфайл уже оптимален — сжатие не уменьшило размер, оригинал не тронут\n'; exit 0
   fi
@@ -152,10 +187,10 @@ audio_args() {  # кодек звука для видео-контейнера $
 
 video_encode() {  # $1 = вход, $2 = выход, $3 = контейнер
   need_ff
-  local vf; vf="$(vscale "$MAX")"
+  local vf; vf="${VF_PRE}$(vscale "$MAX")"
   case "$3" in
     webm)
-      ff -i "$1" -map 0:v:0 -map '0:a:0?' -vf "$vf" -c:v libvpx-vp9 -crf "$CRFVP9" -b:v 0 -row-mt 1 -deadline good -cpu-used 4 -pix_fmt yuv420p $(audio_args webm) "$2" || die "ошибка кодирования видео";;
+      ff $SEEK -i "$1" -map 0:v:0 -map '0:a:0?' -vf "$vf" -c:v libvpx-vp9 -crf "$CRFVP9" -b:v 0 -row-mt 1 -deadline good -cpu-used 4 -pix_fmt yuv420p $(audio_args webm) "$2" || die "ошибка кодирования видео";;
     *)
       local venc
       if [ "$VCODEC" = hevc ]; then
@@ -166,7 +201,7 @@ video_encode() {  # $1 = вход, $2 = выход, $3 = контейнер
         else venc="-c:v h264_videotoolbox -q:v $Q"; fi
       fi
       local extra=""; [ "$3" = mp4 ] || [ "$3" = mov ] || [ "$3" = m4v ] && extra="-movflags +faststart"
-      ff -i "$1" -map 0:v:0 -map '0:a:0?' -vf "$vf" $venc -pix_fmt yuv420p $(audio_args "$3") $extra "$2" || die "ошибка кодирования видео";;
+      ff $SEEK -i "$1" -map 0:v:0 -map '0:a:0?' -vf "$vf" $venc -pix_fmt yuv420p $(audio_args "$3") $extra "$2" || die "ошибка кодирования видео";;
   esac
 }
 
@@ -175,7 +210,7 @@ to_gif() {  # $1 = вход (видео/гиф), $2 = выход
   local m="$MAX"; [ "$m" -eq 0 ] && [ "$kind" = video ] && m=640
   local fpsf="fps=$GFPS,"; [ "$kind" = gif ] && fpsf=""
   local sc=""; [ "$m" -gt 0 ] && sc="$(iscale "$m"):flags=lanczos,"
-  ff -i "$1" -vf "${fpsf}${sc}split[s0][s1];[s0]palettegen=max_colors=$GCOL:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" -loop 0 "$TMP/raw.gif" || die "ошибка создания GIF"
+  ff $SEEK -i "$1" -vf "${fpsf}${VF_PRE}${sc}split[s0][s1];[s0]palettegen=max_colors=$GCOL:stats_mode=diff[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle" -loop 0 "$TMP/raw.gif" || die "ошибка создания GIF"
   if [ -n "$GIFSICLE" ]; then "$GIFSICLE" -O3 --lossy="$GLOSSY" -o "$2" "$TMP/raw.gif" || cp "$TMP/raw.gif" "$2"
   else cp "$TMP/raw.gif" "$2"; fi
 }
@@ -199,7 +234,7 @@ audio_encode() {  # $1 вход, $2 выход, $3 формат
     wav)  a="-c:a pcm_s16le";;
     aiff) a="-c:a pcm_s16be";;
   esac
-  ff -i "$1" -vn -map_metadata 0 $a "$2" || die "ошибка кодирования аудио"
+  ff $SEEK -i "$1" -vn -map_metadata 0 $a "$2" || die "ошибка кодирования аудио"
 }
 
 # картинка -> PNG без экзотики (для ffmpeg). HEIC/RAW/PSD читает только sips.
@@ -233,6 +268,13 @@ if [ "$T" = zip ]; then
   o="$(outfile zip)"
   ditto -c -k --sequesterRsrc --keepParent "$IN" "$o" 2>/dev/null || (cd "$(dirname "$IN")" && zip -qr -9 "$o" "$name") || die "не удалось упаковать"
   finish "$o"
+fi
+
+# кадрирование картинки: сначала режем через ffmpeg в PNG, дальше — обычный путь
+if [ "$kind" = image ] && [ -n "$VF_PRE" ]; then
+  need_ff; img_src
+  ff -i "$SRC" -vf "crop=$MORPH_CROP" -frames:v 1 "$TMP/cropped.png" || die "не удалось кадрировать"
+  IN="$TMP/cropped.png"; ext=png
 fi
 
 case "$kind" in
@@ -269,12 +311,12 @@ gif)
   o="$(outfile "$T")"
   case "$T" in
     gif)
-      if [ -n "$GIFSICLE" ]; then
+      if [ -n "$GIFSICLE" ] && [ "$EDIT" = 0 ]; then
         rs=""; [ "$MAX" -gt 0 ] && rs="--resize-fit ${MAX}x${MAX}"
         "$GIFSICLE" -O3 --lossy="$GLOSSY" --colors "$GCOL" $rs -o "$o" "$IN" || die "gifsicle"
       else to_gif "$IN" "$o"; fi;;
     mp4|mov|mkv|webm) video_encode "$IN" "$o" "$T";;
-    webp) need_ff; ff -i "$IN" -vf "$(iscale "$MAX")" -c:v libwebp_anim -quality "$Q" -loop 0 "$o" 2>/dev/null || ff -i "$IN" -vf "$(iscale "$MAX")" -c:v libwebp -quality "$Q" -loop 0 "$o" || die "ошибка WebP";;
+    webp) need_ff; ff $SEEK -i "$IN" -vf "${VF_PRE}$(iscale "$MAX")" -c:v libwebp_anim -quality "$Q" -loop 0 "$o" 2>/dev/null || ff $SEEK -i "$IN" -vf "${VF_PRE}$(iscale "$MAX")" -c:v libwebp -quality "$Q" -loop 0 "$o" || die "ошибка WebP";;
     png|jpg) [ "$T" = jpg ] && f=jpeg || f=png; sips -s format "$f" "$IN" --out "$o" >/dev/null || die "sips";;
     *) rm -f "$o"; bad;;
   esac
@@ -287,7 +329,7 @@ video)
     mp4|mov|mkv|m4v|webm) video_encode "$IN" "$o" "$T";;
     gif) to_gif "$IN" "$o";;
     mp3|m4a|wav|flac|ogg|opus|aiff) need_ff; audio_encode "$IN" "$o" "$T";;
-    jpg|png) need_ff; ff -ss 0 -i "$IN" -frames:v 1 -vf "$(iscale "$MAX")" "$o" || die "ошибка кадра";;
+    jpg|png) need_ff; ff ${SEEK:--ss 0} -i "$IN" -frames:v 1 -vf "${VF_PRE}$(iscale "$MAX")" "$o" || die "ошибка кадра";;
     *) rm -f "$o"; bad;;
   esac
   finish "$o";;

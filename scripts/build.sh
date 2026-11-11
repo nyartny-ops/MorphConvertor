@@ -40,7 +40,7 @@ rm -rf "$APP"
 osacompile -l JavaScript -s -o "$APP" "$SRC/main.js"
 
 step "Копирую ресурсы"
-cp "$SRC/convert.sh" "$SRC/pdftool.js" "$SRC/ui.html" "$R/"
+cp "$SRC/convert.sh" "$SRC/pdftool.js" "$SRC/ui.html" "$SRC/radial.html" "$R/"
 chmod +x "$R/convert.sh"
 cp "$SRC/Morph.icns" "$R/applet.icns"
 rm -f "$R/Assets.car"

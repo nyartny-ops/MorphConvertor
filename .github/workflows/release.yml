@@ -82,7 +82,7 @@ jobs:
       - name: Проверка бандла
         run: |
           R=dist/Morph.app/Contents/Resources
-          for f in convert.sh pdftool.js ui.html applet.icns bin/ffmpeg; do test -e "$R/$f" || { echo "::error title=Бандл::нет $f"; exit 1; }; done
+          for f in convert.sh pdftool.js ui.html radial.html applet.icns bin/ffmpeg; do test -e "$R/$f" || { echo "::error title=Бандл::нет $f"; exit 1; }; done
           lipo -info "$R/bin/ffmpeg"
           lipo -info "$R/bin/ffmpeg" | grep -q arm64 && lipo -info "$R/bin/ffmpeg" | grep -q x86_64 || { echo "::error title=ffmpeg::не universal"; exit 1; }
           "$R/bin/ffmpeg" -hide_banner -encoders | grep -E ' (libx264|libx265|libvpx-vp9|libmp3lame|libopus|libwebp) ' || true
@@ -116,7 +116,9 @@ jobs:
           }
           if ! kill -0 $PID 2>/dev/null; then echo "::error title=Запуск::Morph завершился"; report; exit 1; fi
           if ! grep -q "интерфейс готов" "$LOG" 2>/dev/null; then echo "::error title=Запуск::интерфейс не загрузился за 90 с"; report; kill $PID; exit 1; fi
-          if grep -q "ОШИБКА" "$LOG"; then echo "::error title=Запуск::ошибки в журнале"; report; kill $PID; exit 1; fi
+          sleep 3
+          if grep -Eq "ОШИБКА|строка меню:|dragTick:|handle:|state:" "$LOG"; then echo "::error title=Запуск::ошибки в журнале"; report; kill $PID; exit 1; fi
+          grep -q "radial ready" "$LOG" || { echo "::error title=Круговое меню::не загрузилось"; report; kill $PID; exit 1; }
           report
           test -s "$HOME/Library/Application Support/Morph/web/state.js" || { echo "::error title=Запуск::state.js не создан"; exit 1; }
           kill $PID; wait $PID 2>/dev/null || true

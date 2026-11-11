@@ -26,6 +26,7 @@ jobs:
         run: |
           node --check src/main.js
           node --check src/pdftool.js
+          sed -n '/<script>/,/<\/script>/p' src/radial.html | sed '1d;$d' > /tmp/radial.js && node --check /tmp/radial.js
           sed -n '/<script>/,/<\/script>/p' src/ui.html | sed '1d;$d' > /tmp/ui.js
           node --check /tmp/ui.js
 
