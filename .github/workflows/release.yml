@@ -94,15 +94,19 @@ jobs:
           MORPH_ENGINE: ${{ github.workspace }}/dist/Morph.app/Contents/Resources/convert.sh
         run: bash tests/engine.sh
 
-      - name: Скрипт приложения через osascript (ошибки с номерами строк)
+      - name: Пошаговая проверка скрипта (bisect)
         continue-on-error: true
         run: |
           mkdir -p "$HOME/Library/Logs"
-          MORPH_CI=1 perl -e 'alarm 25; exec @ARGV' osascript -l JavaScript "$GITHUB_WORKSPACE/src/main.js" > "$RUNNER_TEMP/osa.txt" 2>&1; echo "exit=$?"
-          cat "$RUNNER_TEMP/osa.txt" | head -50
-          tail -n 20 "$RUNNER_TEMP/osa.txt" | while IFS= read -r l; do echo "::notice title=osascript::$l"; done
-          tail -n 10 "$HOME/Library/Logs/Morph.log" 2>/dev/null | while IFS= read -r l; do echo "::notice title=osa-log::$l"; done
-          pkill -f "osascript -l JavaScript" || true
+          echo "::notice title=trivial::$(perl -e 'alarm 15; exec @ARGV' osascript -l JavaScript -e 'ObjC.import("Cocoa"); "ok " + $.NSProcessInfo.processInfo.operatingSystemVersionString.js' 2>&1 | tr '\n' ' ')"
+          N=$(wc -l < src/main.js)
+          for L in 13 36 76 112 306 360 422 $N; do
+            head -n $L src/main.js > "$RUNNER_TEMP/part.js"; echo '"part-ok"' >> "$RUNNER_TEMP/part.js"
+            out="$(MORPH_CI=1 perl -e 'alarm 15; exec @ARGV' osascript -l JavaScript "$RUNNER_TEMP/part.js" 2>&1 | tr '\n' ' ' | cut -c1-500)"; rc=$?
+            echo "::notice title=lines 1-$L::rc=$rc $out"
+          done
+          out="$(MORPH_CI=1 perl -e 'alarm 25; exec @ARGV' osascript -l JavaScript src/main.js 2>&1 | tr '\n' ' ' | cut -c1-900)"
+          echo "::notice title=full run()::$out"
 
       - name: Запуск приложения
         run: |
